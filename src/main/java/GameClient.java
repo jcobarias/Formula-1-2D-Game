@@ -19,7 +19,21 @@ import java.util.Set;
 import java.util.Collections;
 
 enum GameState {
-    START_SCREEN, RACING, VICTORY, PAUSED, EXIT_CONFIRM, COUNTDOWN
+    START_SCREEN, RACING, VICTORY, PAUSED, EXIT_CONFIRM, COUNTDOWN, PODIUM
+}
+
+class Confetti {
+    double x, y, vx, vy, life;
+    Color color;
+
+    public Confetti(double x, double y) {
+        this.x = x;
+        this.y = y;
+        this.vx = Math.random() * 4 - 2;
+        this.vy = Math.random() * -5 - 2;
+        this.life = 1.0;
+        this.color = Color.color(Math.random(), Math.random(), Math.random());
+    }
 }
 
 enum F1Team {
@@ -60,6 +74,12 @@ public class GameClient extends Application {
     private VBox pauseMenuUI;
     private VBox exitConfirmUI;
     private VBox victoryScreenUI; // Victory Overlay
+    
+    // Camera & Cinematic
+    private double cameraX = 0;
+    private double cameraY = 0;
+    private double orbitAngle = 0;
+    private List<Confetti> confetti = new ArrayList<>();
 
     // Menu Navigation
     private int menuIndex = 0;
@@ -170,73 +190,32 @@ public class GameClient extends Application {
                 if (currentState == GameState.VICTORY) {
                     gc.getCanvas().setEffect(new javafx.scene.effect.BoxBlur(10, 10, 3));
                     updateVictoryUI(gc);
+                    runRaceLogic(0, gc); 
                     return;
                 } else {
                     gc.getCanvas().setEffect(null);
                 }
 
+                if (currentState == GameState.PODIUM) {
+                    countdownTime += deltaTime;
+                    orbitAngle += deltaTime * 0.5;
+                    updateConfetti(deltaTime);
+                    cameraX = myCar.x - 1920 / 2.0 + Math.cos(orbitAngle) * 200;
+                    cameraY = myCar.y - 1080 / 2.0 + Math.sin(orbitAngle) * 200;
+                    runRaceLogic(0, gc);
+                    drawConfetti(gc);
+                    if (countdownTime > 5.0) {
+                        currentState = GameState.VICTORY;
+                        countdownTime = 0;
+                    }
+                    return;
+                }
+
                 // --- RACING STATE ---
                 gameTime += deltaTime;
                 currentLapTime += deltaTime;
+                cameraX = 0; cameraY = 0; // Keep camera fixed during race
                 runRaceLogic(deltaTime, gc);
-            }
-
-            private void runRaceLogic(double dt, GraphicsContext gc) {
-                InputState input = (dt > 0) ? inputHandler.getCurrentInput() : new InputState();
-                double oldX = myCar.x, oldY = myCar.y, oldAngle = myCar.angle;
-
-                Vector2D newPos = PhysicsEngine.calculatePosition(myCar, input, dt);
-                myCar.x = newPos.x;
-                myCar.y = newPos.y;
-                myCar.updateAutomaticGears();
-
-                // Collision
-                int hitIndex = PhysicsEngine.isColliding(myCar.getBounds(), raceTrack.getWalls());
-                if (hitIndex != -1 && dt > 0) {
-                    myCar.x = oldX;
-                    myCar.y = oldY;
-                    myCar.angle = oldAngle;
-
-                    // Repulsion Logic: Nudge car away from walls to prevent sticking
-                    double vecX = myCar.x - 960, vecY = myCar.y - 540;
-                    double dist = Math.sqrt(vecX * vecX + vecY * vecY);
-                    if (dist > 0) {
-                        // Corrected: Wall 0 (Inner) pushes OUT, Wall 1 (Outer) pushes IN
-                        // Reduced force for a smoother feel
-                        double pushDir = (hitIndex == 0) ? 1.0 : -1.0;
-                        myCar.x += (vecX / dist) * pushDir * 5;
-                        myCar.y += (vecY / dist) * pushDir * 5;
-                    }
-                    myCar.velocity = 0;
-                }
-
-                myCar.isOffTrack = raceTrack.isOutside(myCar.x, myCar.y);
-
-                // Checkpoints
-                if (dt > 0) {
-                    Shape nextCP = raceTrack.getCheckpoints().get(myCar.nextCheckpoint);
-                    if (Shape.intersect(myCar.getBounds(), nextCP).getBoundsInLocal().getWidth() != -1) {
-                        if (myCar.nextCheckpoint == 0 && myCar.velocity > 50) {
-                            myCar.lapCount++;
-                            lastLapTime = currentLapTime;
-                            if (bestLapTime == 0 || lastLapTime < bestLapTime)
-                                bestLapTime = lastLapTime;
-                            currentLapTime = 0;
-                            if (myCar.lapCount >= TOTAL_LAPS)
-                                currentState = GameState.VICTORY;
-                        }
-                        myCar.nextCheckpoint++;
-                        if (myCar.nextCheckpoint >= raceTrack.getCheckpoints().size())
-                            myCar.nextCheckpoint = 0;
-                    }
-                }
-
-                // Render
-                gc.setFill(Color.web("#1a1a1a"));
-                gc.fillRect(0, 0, 1920, 1080);
-                trackRenderer.drawTrack(gc, raceTrack);
-                trackRenderer.drawCars(gc, List.of(myCar));
-                drawUI(gc);
             }
         }.start();
 
@@ -692,6 +671,101 @@ public class GameClient extends Application {
 
     public void connectToServer(String ip, int port) {
         // TODO: Initialize socket connection
+    }
+
+    private void spawnConfetti() {
+        confetti.clear();
+        for (int i = 0; i < 200; i++) {
+            confetti.add(new Confetti(myCar.x, myCar.y));
+        }
+    }
+
+    private void updateConfetti(double dt) {
+        for (Confetti c : confetti) {
+            c.x += c.vx;
+            c.y += c.vy;
+            c.vy += 0.1; // Gravity
+            c.life -= dt * 0.2;
+        }
+    }
+
+    private void drawConfetti(GraphicsContext gc) {
+        gc.save();
+        gc.translate(-cameraX, -cameraY);
+        for (Confetti c : confetti) {
+            gc.setFill(c.color.deriveColor(0, 1, 1, Math.max(0, c.life)));
+            gc.fillRect(c.x, c.y, 8, 8);
+        }
+        gc.restore();
+    }
+
+    private void renderRaceScene(GraphicsContext gc) {
+        runRaceLogic(0, gc); // Render-only call
+    }
+
+    private void runRaceLogic(double dt, GraphicsContext gc) {
+        InputState input = (dt > 0) ? inputHandler.getCurrentInput() : new InputState();
+        double oldX = myCar.x, oldY = myCar.y, oldAngle = myCar.angle;
+
+        Vector2D newPos = PhysicsEngine.calculatePosition(myCar, input, dt);
+        myCar.x = newPos.x;
+        myCar.y = newPos.y;
+        myCar.updateAutomaticGears();
+
+        // Collision
+        int hitIndex = PhysicsEngine.isColliding(myCar.getBounds(), raceTrack.getWalls());
+        if (hitIndex != -1 && dt > 0) {
+            myCar.x = oldX;
+            myCar.y = oldY;
+            myCar.angle = oldAngle;
+
+            // Repulsion Logic: Nudge car away from walls to prevent sticking
+            double vecX = myCar.x - 960, vecY = myCar.y - 540;
+            double dist = Math.sqrt(vecX * vecX + vecY * vecY);
+            if (dist > 0) {
+                // Corrected: Wall 0 (Inner) pushes OUT, Wall 1 (Outer) pushes IN
+                // Reduced force for a smoother feel
+                double pushDir = (hitIndex == 0) ? 1.0 : -1.0;
+                myCar.x += (vecX / dist) * pushDir * 5;
+                myCar.y += (vecY / dist) * pushDir * 5;
+            }
+            myCar.velocity = 0;
+        }
+
+        myCar.isOffTrack = raceTrack.isOutside(myCar.x, myCar.y);
+
+        // Checkpoints
+        if (dt > 0) {
+            Shape nextCP = raceTrack.getCheckpoints().get(myCar.nextCheckpoint);
+            if (Shape.intersect(myCar.getBounds(), nextCP).getBoundsInLocal().getWidth() != -1) {
+                if (myCar.nextCheckpoint == 0 && myCar.velocity > 50) {
+                    myCar.lapCount++;
+                    lastLapTime = currentLapTime;
+                    if (bestLapTime == 0 || lastLapTime < bestLapTime)
+                        bestLapTime = lastLapTime;
+                    currentLapTime = 0;
+                    if (myCar.lapCount >= TOTAL_LAPS) {
+                        currentState = GameState.PODIUM;
+                        countdownTime = 0;
+                        spawnConfetti();
+                    }
+                }
+                myCar.nextCheckpoint++;
+                if (myCar.nextCheckpoint >= raceTrack.getCheckpoints().size())
+                    myCar.nextCheckpoint = 0;
+            }
+        }
+
+        // Render
+        gc.save();
+        gc.setFill(Color.web("#1a1a1a"));
+        gc.fillRect(0, 0, 1920, 1080);
+        gc.translate(-cameraX, -cameraY);
+        trackRenderer.drawTrack(gc, raceTrack);
+        trackRenderer.drawCars(gc, List.of(myCar));
+        gc.restore();
+
+        drawUI(gc);
     }
 
     public static void main(String[] args) {
