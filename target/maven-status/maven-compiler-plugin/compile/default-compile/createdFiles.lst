@@ -5,6 +5,7 @@ Player.class
 InputHandler.class
 CarState.class
 TrackRenderer.class
+GameClient$1.class
 GameClient.class
 GameServer.class
 InputState.class

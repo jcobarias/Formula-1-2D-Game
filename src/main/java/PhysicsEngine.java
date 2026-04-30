@@ -4,9 +4,14 @@ import javafx.scene.shape.Shape;
 // Utility class for physics calculations
 public class PhysicsEngine {
     public static Vector2D calculatePosition(Car car, InputState input, double deltaTime) {
-        // 1. Handle Acceleration/Braking
+        // 1. Handle Acceleration/Braking based on Gear
+        double currentAccel = car.acceleration / car.currentGear;
+        double maxSpeed = car.currentGear * 200.0; // Higher gear = higher max speed
+
         if (input.accelerating) {
-            car.velocity += car.acceleration * deltaTime;
+            if (car.velocity < maxSpeed) {
+                car.velocity += currentAccel * deltaTime;
+            }
         } else if (input.braking) {
             car.velocity -= car.brakingForce * deltaTime;
         }
@@ -41,9 +46,15 @@ public class PhysicsEngine {
         return speed * friction;
     }
 
-    public static boolean isColliding(Shape carBounds, List<Shape> obstacles) {
-        // TODO: Implement collision detection
-        return false;
+    public static int isColliding(Shape carBounds, List<Shape> obstacles) {
+        for (int i = 0; i < obstacles.size(); i++) {
+            Shape wall = obstacles.get(i);
+            Shape intersection = Shape.intersect(carBounds, wall);
+            if (intersection.getBoundsInLocal().getWidth() != -1) {
+                return i; // Return the index of the wall hit
+            }
+        }
+        return -1; // No collision
     }
 }
 
@@ -60,6 +71,41 @@ class Car {
     public double brakingForce = 300.0;
     public double rotationSpeed = 150.0;
     public boolean isOffTrack = false;
+    
+    // Race Progress
+    public int lapCount = 0;
+    public int nextCheckpoint = 0;
+    
+    // Gear System
+    public int currentGear = 1;
+    public final int MAX_GEAR = 6;
+    public boolean isAutomatic = true; // Default to Auto
+
+    public void updateAutomaticGears() {
+        if (!isAutomatic) return;
+
+        double maxSpeedForGear = currentGear * 200.0;
+        
+        // Shift Up
+        if (velocity > maxSpeedForGear * 0.9 && currentGear < MAX_GEAR) {
+            currentGear++;
+        }
+        // Shift Down
+        if (velocity < maxSpeedForGear * 0.4 && currentGear > 1) {
+            currentGear--;
+        }
+    }
+
+    public double getKPH() {
+        return Math.abs(velocity) * 0.5; // Conversion factor (adjust as needed)
+    }
+
+    public javafx.scene.shape.Rectangle getBounds() {
+        // Create a rectangle representing the car's current position and rotation
+        javafx.scene.shape.Rectangle rect = new javafx.scene.shape.Rectangle(x - 15, y - 10, 30, 20);
+        rect.setRotate(angle);
+        return rect;
+    }
 }
 
 class InputState {
@@ -67,4 +113,6 @@ class InputState {
     public boolean braking;
     public boolean turningLeft;
     public boolean turningRight;
+    public boolean gearUp;
+    public boolean gearDown;
 }

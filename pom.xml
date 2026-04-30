@@ -40,7 +40,7 @@
                     <execution>
                         <id>default-cli</id>
                         <configuration>
-                            <mainClass>GameApp</mainClass>
+                            <mainClass>GameClient</mainClass>
                         </configuration>
                     </execution>
                 </executions>
