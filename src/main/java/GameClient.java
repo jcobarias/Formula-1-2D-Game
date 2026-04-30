@@ -1,57 +1,133 @@
 import javafx.application.Application;
 import javafx.stage.Stage;
-import javafx.scene.input.KeyEvent;
-import javafx.scene.input.KeyCode;
+import javafx.scene.Scene;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
-import javafx.scene.layout.StackPane;
-import javafx.scene.Scene;
-import javafx.animation.AnimationTimer;
+import javafx.scene.layout.*;
 import javafx.scene.paint.Color;
-import javafx.scene.shape.Shape;
-
+import javafx.scene.shape.*;
+import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyEvent;
+import javafx.animation.AnimationTimer;
+import javafx.scene.text.*;
+import javafx.scene.control.Button;
+import javafx.geometry.*;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.Collections;
 
-// Main JavaFX client class
+enum GameState {
+    START_SCREEN, RACING, VICTORY, PAUSED, EXIT_CONFIRM, COUNTDOWN
+}
+
+enum F1Team {
+    MERCEDES("Mercedes-AMG", "#A6A6A6", "#00A19B"),
+    FERRARI("Scuderia Ferrari", "#DC0000", "#FEF200"),
+    RED_BULL("Red Bull Racing", "#0600EF", "#DC0000"),
+    MCLAREN("McLaren F1", "#FF8700", "#47C7FC"),
+    ALPINE("Alpine F1", "#0090FF", "#E10600");
+
+    public final String fullName;
+    public final String primary;
+    public final String accent;
+
+    F1Team(String fullName, String primary, String accent) {
+        this.fullName = fullName;
+        this.primary = primary;
+        this.accent = accent;
+    }
+}
+
 public class GameClient extends Application {
     private Car myCar = new Car();
     private InputHandler inputHandler = new InputHandler();
     private TrackRenderer trackRenderer = new TrackRenderer();
     private RaceTrack raceTrack = new RaceTrack();
 
-    // Race State
+    // Game States
+    private GameState currentState = GameState.START_SCREEN;
+    private F1Team selectedTeam = F1Team.MERCEDES;
     private int TOTAL_LAPS = 3;
     private double gameTime = 0;
-    private boolean isFinished = false;
+    private double countdownTime = 0;
+    private double currentLapTime = 0;
+    private double lastLapTime = 0;
+    private double bestLapTime = 0;
+    private GameState previousState = GameState.START_SCREEN; // To remember where we came from
+    private VBox startScreenUI;
+    private VBox pauseMenuUI;
+    private VBox exitConfirmUI;
+    private VBox victoryScreenUI; // Victory Overlay
+
+    // Menu Navigation
+    private int menuIndex = 0;
+    private List<VBox> carCards = new ArrayList<>();
+    private List<Button> pauseButtons = new ArrayList<>();
+    private List<Button> victoryButtons = new ArrayList<>();
+    private Button startScreenExitBtn;
+    private List<Button> exitModalButtons = new ArrayList<>();
+    private int modalIndex = 0;
 
     @Override
     public void start(Stage stage) {
+        StackPane root = new StackPane();
         Canvas canvas = new Canvas(1920, 1080);
         GraphicsContext gc = canvas.getGraphicsContext2D();
 
-        StackPane root = new StackPane(canvas);
-        Scene scene = new Scene(root);
+        // UI Menus
+        this.startScreenUI = createStartScreenUI();
+        this.pauseMenuUI = createPauseMenuUI();
+        this.exitConfirmUI = createExitConfirmUI();
+        this.victoryScreenUI = createVictoryScreenUI();
 
-        // Input Handling
+        root.getChildren().addAll(canvas, startScreenUI, pauseMenuUI, victoryScreenUI, exitConfirmUI);
+        Scene scene = new Scene(root, 1920, 1080);
+
         scene.setOnKeyPressed(e -> {
-            inputHandler.handleKeyPressed(e);
-            
-            // Toggle Auto/Manual (M Key)
-            if (e.getCode() == KeyCode.M) {
-                myCar.isAutomatic = !myCar.isAutomatic;
+            if (e.getCode() == KeyCode.ESCAPE && currentState != GameState.START_SCREEN) {
+                togglePause();
+                return;
             }
 
-            // Handle Manual Gear Shifting (Only if in Manual mode)
+            if (currentState == GameState.START_SCREEN) {
+                handleStartMenuKey(e.getCode());
+                return;
+            }
+
+            if (currentState == GameState.PAUSED) {
+                handlePauseMenuKey(e.getCode());
+                return;
+            }
+
+            if (currentState == GameState.PAUSED) {
+                handlePauseMenuKey(e.getCode());
+                return;
+            }
+
+            if (currentState == GameState.EXIT_CONFIRM) {
+                handleExitConfirmKey(e.getCode());
+                return;
+            }
+
+            if (currentState == GameState.VICTORY) {
+                handleVictoryMenuKey(e.getCode());
+                return;
+            }
+
+            // Capture racing input
+            inputHandler.handleKeyPressed(e);
+            if (currentState != GameState.RACING)
+                return;
+
+            if (e.getCode() == KeyCode.M)
+                myCar.isAutomatic = !myCar.isAutomatic;
             if (!myCar.isAutomatic) {
-                if (e.getCode() == KeyCode.E && myCar.currentGear < myCar.MAX_GEAR) {
+                if (e.getCode() == KeyCode.E && myCar.currentGear < myCar.MAX_GEAR)
                     myCar.currentGear++;
-                }
-                if (e.getCode() == KeyCode.Q && myCar.currentGear > 1) {
+                if (e.getCode() == KeyCode.Q && myCar.currentGear > 1)
                     myCar.currentGear--;
-                }
             }
         });
         scene.setOnKeyReleased(inputHandler::handleKeyReleased);
@@ -69,124 +145,524 @@ public class GameClient extends Application {
                 double deltaTime = (now - lastTime) / 1_000_000_000.0;
                 lastTime = now;
 
-                // 8. Replay Check (Must be above the 'isFinished' return!)
-                if (isFinished && inputHandler.isReplayPressed()) {
-                    resetGame();
-                }
-
-                if (isFinished) {
-                    renderVictory(gc);
+                // Handle States
+                if (currentState == GameState.START_SCREEN) {
+                    drawMenuBackground(gc);
                     return;
                 }
 
-                // 0. Update Timer
+                if (currentState == GameState.COUNTDOWN) {
+                    countdownTime += deltaTime;
+                    runRaceLogic(0, gc); // 0 deltaTime for physics (frozen)
+                    drawStartingLights(gc);
+                    if (countdownTime > 4.0) {
+                        currentState = GameState.RACING;
+                        countdownTime = 0;
+                    }
+                    return;
+                }
+
+                if (currentState == GameState.PAUSED || currentState == GameState.EXIT_CONFIRM) {
+                    runRaceLogic(0, gc); // Draw but don't update physics
+                    return;
+                }
+
+                if (currentState == GameState.VICTORY) {
+                    gc.getCanvas().setEffect(new javafx.scene.effect.BoxBlur(10, 10, 3));
+                    updateVictoryUI(gc);
+                    return;
+                } else {
+                    gc.getCanvas().setEffect(null);
+                }
+
+                // --- RACING STATE ---
                 gameTime += deltaTime;
+                currentLapTime += deltaTime;
+                runRaceLogic(deltaTime, gc);
+            }
 
-                // 1. Update Physics
-                InputState input = inputHandler.getCurrentInput();
+            private void runRaceLogic(double dt, GraphicsContext gc) {
+                InputState input = (dt > 0) ? inputHandler.getCurrentInput() : new InputState();
+                double oldX = myCar.x, oldY = myCar.y, oldAngle = myCar.angle;
 
-                // Save old position/angle in case of collision
-                double oldX = myCar.x;
-                double oldY = myCar.y;
-                double oldAngle = myCar.angle;
-
-                Vector2D newPos = PhysicsEngine.calculatePosition(myCar, input, deltaTime);
+                Vector2D newPos = PhysicsEngine.calculatePosition(myCar, input, dt);
                 myCar.x = newPos.x;
                 myCar.y = newPos.y;
-
-                // 1.5 Update Auto Gears
                 myCar.updateAutomaticGears();
 
-                // 2. Collision Check
+                // Collision
                 int hitIndex = PhysicsEngine.isColliding(myCar.getBounds(), raceTrack.getWalls());
-                if (hitIndex != -1) {
-                    // Revert to last safe position and angle
+                if (hitIndex != -1 && dt > 0) {
                     myCar.x = oldX;
                     myCar.y = oldY;
                     myCar.angle = oldAngle;
-                    
-                    // Precise Push:
-                    // Index 0 = Inner Wall -> Push AWAY from center
-                    // Index 1 = Outer Wall -> Push TOWARDS center
-                    double vecX = myCar.x - 960; // New Center X (1920/2)
-                    double vecY = myCar.y - 540; // New Center Y (1080/2)
+
+                    // Repulsion Logic: Nudge car away from walls to prevent sticking
+                    double vecX = myCar.x - 960, vecY = myCar.y - 540;
                     double dist = Math.sqrt(vecX * vecX + vecY * vecY);
-                    
                     if (dist > 0) {
+                        // Corrected: Wall 0 (Inner) pushes OUT, Wall 1 (Outer) pushes IN
+                        // Reduced force for a smoother feel
                         double pushDir = (hitIndex == 0) ? 1.0 : -1.0;
                         myCar.x += (vecX / dist) * pushDir * 5;
                         myCar.y += (vecY / dist) * pushDir * 5;
                     }
-
-                    myCar.velocity = 0; 
+                    myCar.velocity = 0;
                 }
 
-                // 3. Off-Track Check
-                myCar.isOffTrack = raceTrack.isOutside(myCar.x, myCar.y); // Simplified for now
+                myCar.isOffTrack = raceTrack.isOutside(myCar.x, myCar.y);
 
-                // 4. Checkpoint Progress
-                Shape nextCP = raceTrack.getCheckpoints().get(myCar.nextCheckpoint);
-                if (Shape.intersect(myCar.getBounds(), nextCP).getBoundsInLocal().getWidth() != -1) {
-                    myCar.nextCheckpoint++;
-                    if (myCar.nextCheckpoint >= raceTrack.getCheckpoints().size()) {
-                        myCar.nextCheckpoint = 0;
-                        myCar.lapCount++;
-                        
-                        // Check for Victory
-                        if (myCar.lapCount >= TOTAL_LAPS) {
-                            isFinished = true;
+                // Checkpoints
+                if (dt > 0) {
+                    Shape nextCP = raceTrack.getCheckpoints().get(myCar.nextCheckpoint);
+                    if (Shape.intersect(myCar.getBounds(), nextCP).getBoundsInLocal().getWidth() != -1) {
+                        if (myCar.nextCheckpoint == 0 && myCar.velocity > 50) {
+                            myCar.lapCount++;
+                            lastLapTime = currentLapTime;
+                            if (bestLapTime == 0 || lastLapTime < bestLapTime)
+                                bestLapTime = lastLapTime;
+                            currentLapTime = 0;
+                            if (myCar.lapCount >= TOTAL_LAPS)
+                                currentState = GameState.VICTORY;
                         }
+                        myCar.nextCheckpoint++;
+                        if (myCar.nextCheckpoint >= raceTrack.getCheckpoints().size())
+                            myCar.nextCheckpoint = 0;
                     }
                 }
 
-                // 5. Render
-                gc.setFill(Color.DARKGREEN); // Background
-                gc.fillRect(0, 0, canvas.getWidth(), canvas.getHeight());
-
+                // Render
+                gc.setFill(Color.web("#1a1a1a"));
+                gc.fillRect(0, 0, 1920, 1080);
                 trackRenderer.drawTrack(gc, raceTrack);
                 trackRenderer.drawCars(gc, List.of(myCar));
-
-                // 6. Draw UI
-                gc.setFill(Color.WHITE);
-                gc.setFont(new javafx.scene.text.Font("Arial", 24));
-                gc.fillText(String.format("Lap: %d/%d", myCar.lapCount + 1, TOTAL_LAPS), 20, 40);
-                gc.fillText("Checkpoint: " + myCar.nextCheckpoint + "/4", 20, 70);
-                gc.fillText(String.format("Time: %.2fs", gameTime), 20, 100);
-                
-                // Speedometer & Gear
-                gc.setFill(Color.CYAN);
-                gc.setFont(new javafx.scene.text.Font("Arial Bold", 36));
-                gc.fillText(String.format("GEAR: %d (%s)", 
-                            myCar.currentGear, 
-                            myCar.isAutomatic ? "AUTO" : "MANUAL"), 20, 160);
-                gc.fillText(String.format("%.0f KPH", myCar.getKPH()), 20, 200);
-                gc.setFont(new javafx.scene.text.Font("Arial", 18));
-                gc.fillText("Press M to Toggle Auto/Manual", 20, 230);
-
-                // 7. Debug Terminal Output
-                System.out.printf("X: %.2f | Y: %.2f | Vel: %.2f | Gear: %d | KPH: %.1f\n", 
-                                  myCar.x, myCar.y, myCar.velocity, myCar.currentGear, myCar.getKPH());
+                drawUI(gc);
             }
         }.start();
 
-        stage.setTitle("GridRush - Local Test");
+        stage.setTitle("GridRush F1 - Tournament Mode");
         stage.setScene(scene);
         stage.show();
 
-        // Initial car position (Bottom track center)
-        myCar.x = 960;
-        myCar.y = 990;
+        // Grab focus so keys work immediately
+        root.requestFocus();
+        updateMenuHighlighting();
+    }
+
+    private VBox createStartScreenUI() {
+        VBox menu = new VBox(40);
+        menu.setAlignment(Pos.CENTER);
+        menu.setStyle("-fx-background-color: rgba(0,0,0,0.8);");
+        menu.setVisible(true); // Explicitly visible at start
+
+        Text title = new Text("GRIDRUSH F1");
+        title.setFont(Font.font("Arial Black", 120));
+        title.setFill(Color.WHITE);
+        title.setStroke(Color.CYAN);
+        title.setStrokeWidth(2);
+
+        Text sub = new Text("SELECT YOUR MACHINE");
+        sub.setFont(Font.font("Arial", 30));
+        sub.setFill(Color.LIGHTGRAY);
+
+        HBox carBox = new HBox(20);
+        carBox.setAlignment(Pos.CENTER);
+
+        for (F1Team team : F1Team.values()) {
+            VBox card = new VBox(15);
+            card.setAlignment(Pos.CENTER);
+            card.setPadding(new Insets(20));
+            card.setStyle("-fx-border-color: white; -fx-border-width: 2; -fx-background-color: #222;");
+            card.setPrefWidth(280);
+
+            Rectangle preview = new Rectangle(150, 80, Color.web(team.primary));
+            preview.setStroke(Color.web(team.accent));
+            preview.setStrokeWidth(4);
+
+            Text name = new Text(team.fullName);
+            name.setFont(Font.font("Arial Bold", 18));
+            name.setFill(Color.WHITE);
+
+            Button joinBtn = new Button("DRIVE");
+            joinBtn.setStyle("-fx-background-color: #444; -fx-text-fill: white; -fx-font-weight: bold;");
+            joinBtn.setOnAction(e -> startRace(team, menu));
+
+            card.getChildren().addAll(preview, name, joinBtn);
+            carBox.getChildren().add(card);
+            carCards.add(card);
+        }
+        updateMenuHighlighting();
+
+        menu.getChildren().addAll(title, sub, carBox);
+
+        // Add a dedicated Exit Button at the bottom
+        this.startScreenExitBtn = new Button("EXIT GAME");
+        styleMenuButton(startScreenExitBtn);
+        startScreenExitBtn.setOnAction(e -> showExitConfirm());
+        menu.getChildren().add(startScreenExitBtn);
+
+        return menu;
+    }
+
+    private VBox createExitConfirmUI() {
+        VBox modal = new VBox(30);
+        modal.setAlignment(Pos.CENTER);
+        modal.setStyle("-fx-background-color: rgba(0,0,0,0.9); -fx-border-color: cyan; -fx-border-width: 3;");
+        modal.setMaxSize(600, 300);
+        modal.setVisible(false);
+
+        Text msg = new Text("ARE YOU SURE YOU WANT TO QUIT?");
+        msg.setFont(Font.font("Arial Black", 24));
+        msg.setFill(Color.WHITE);
+
+        HBox btnBox = new HBox(40);
+        btnBox.setAlignment(Pos.CENTER);
+
+        Button yesBtn = new Button("YES, QUIT");
+        yesBtn.setStyle("-fx-background-color: #900; -fx-text-fill: white; -fx-font-weight: bold; -fx-font-size: 20;");
+        yesBtn.setOnAction(e -> System.exit(0));
+        exitModalButtons.add(yesBtn);
+
+        Button noBtn = new Button("NO, STAY");
+        noBtn.setStyle("-fx-background-color: #444; -fx-text-fill: white; -fx-font-weight: bold; -fx-font-size: 20;");
+        noBtn.setOnAction(e -> hideExitConfirm());
+        exitModalButtons.add(noBtn);
+
+        btnBox.getChildren().addAll(yesBtn, noBtn);
+        modal.getChildren().addAll(msg, btnBox);
+        return modal;
+    }
+
+    private void showExitConfirm() {
+        this.previousState = currentState;
+        currentState = GameState.EXIT_CONFIRM;
+        exitConfirmUI.setVisible(true);
+        modalIndex = 1; // Default to 'NO, STAY' for safety
+        updateMenuHighlighting();
+    }
+
+    private void hideExitConfirm() {
+        currentState = previousState;
+        exitConfirmUI.setVisible(false);
+        updateMenuHighlighting();
+    }
+
+    private VBox createPauseMenuUI() {
+        VBox menu = new VBox(30);
+        menu.setAlignment(Pos.CENTER);
+        menu.setStyle("-fx-background-color: rgba(0,0,0,0.7);");
+        menu.setVisible(false); // Hidden initially
+
+        Text title = new Text("PAUSED");
+        title.setFont(Font.font("Arial Black", 80));
+        title.setFill(Color.WHITE);
+
+        Button resumeBtn = new Button("RESUME");
+        styleMenuButton(resumeBtn);
+        resumeBtn.setOnAction(e -> togglePause());
+        pauseButtons.add(resumeBtn);
+
+        Button homeBtn = new Button("HOME");
+        styleMenuButton(homeBtn);
+        homeBtn.setOnAction(e -> {
+            togglePause();
+            resetGame();
+        });
+        pauseButtons.add(homeBtn);
+
+        Button exitBtn = new Button("EXIT");
+        styleMenuButton(exitBtn);
+        exitBtn.setOnAction(e -> System.exit(0));
+        pauseButtons.add(exitBtn);
+
+        menu.getChildren().addAll(title, resumeBtn, homeBtn, exitBtn);
+        return menu;
+    }
+
+    private void handleStartMenuKey(KeyCode code) {
+        if (code == KeyCode.LEFT && menuIndex < carCards.size()) {
+            menuIndex = (menuIndex - 1 + carCards.size()) % carCards.size();
+        } else if (code == KeyCode.RIGHT && menuIndex < carCards.size()) {
+            menuIndex = (menuIndex + 1) % carCards.size();
+        } else if (code == KeyCode.DOWN && menuIndex < carCards.size()) {
+            menuIndex = carCards.size(); // Focus Exit Button
+        } else if (code == KeyCode.UP && menuIndex == carCards.size()) {
+            menuIndex = 0; // Focus first car card
+        } else if (code == KeyCode.ENTER) {
+            if (menuIndex < carCards.size())
+                startRace(F1Team.values()[menuIndex], startScreenUI);
+            else
+                showExitConfirm();
+        }
+        updateMenuHighlighting();
+    }
+
+    private VBox createVictoryScreenUI() {
+        VBox overlay = new VBox(30);
+        overlay.setAlignment(Pos.CENTER);
+        overlay.setStyle("-fx-background-color: rgba(0,0,0,0.85);"); // Dark Sleek Background
+        overlay.setVisible(false);
+
+        Text title = new Text("PODIUM FINISH!");
+        title.setFont(Font.font("Arial Black", 100));
+        title.setFill(Color.GOLD);
+        title.setEffect(new javafx.scene.effect.DropShadow(20, Color.GOLD));
+
+        Button replayBtn = new Button("REPLAY");
+        replayBtn.setText(String.format("REPLAY (PB: %.2fs)", bestLapTime));
+        styleMenuButton(replayBtn);
+        replayBtn.setOnAction(e -> {
+            victoryScreenUI.setVisible(false);
+            resetGame();
+            startRace(selectedTeam, startScreenUI); // Quick restart
+        });
+        victoryButtons.add(replayBtn);
+
+        Button menuBtn = new Button("MAIN MENU");
+        styleMenuButton(menuBtn);
+        menuBtn.setOnAction(e -> {
+            victoryScreenUI.setVisible(false);
+            resetGame();
+        });
+        victoryButtons.add(menuBtn);
+
+        Button exitBtn = new Button("EXIT");
+        styleMenuButton(exitBtn);
+        exitBtn.setOnAction(e -> showExitConfirm());
+        victoryButtons.add(exitBtn);
+
+        overlay.getChildren().addAll(title, replayBtn, menuBtn, exitBtn);
+        return overlay;
+    }
+
+    private void updateVictoryUI(GraphicsContext gc) {
+        if (!victoryScreenUI.isVisible()) {
+            victoryScreenUI.setVisible(true);
+            menuIndex = 0;
+            // Update the Replay button text with the latest record
+            victoryButtons.get(0).setText(String.format("REPLAY (BEST: %.2fs)", bestLapTime));
+            updateMenuHighlighting();
+        }
+        // Background is now handled by VBox styling and Canvas effect
+    }
+
+    private void handleVictoryMenuKey(KeyCode code) {
+        if (code == KeyCode.UP) {
+            menuIndex = (menuIndex - 1 + victoryButtons.size()) % victoryButtons.size();
+        } else if (code == KeyCode.DOWN) {
+            menuIndex = (menuIndex + 1) % victoryButtons.size();
+        } else if (code == KeyCode.ENTER) {
+            victoryButtons.get(menuIndex).fire();
+        }
+        updateMenuHighlighting();
+    }
+
+    private void handleExitConfirmKey(KeyCode code) {
+        if (code == KeyCode.LEFT || code == KeyCode.RIGHT) {
+            modalIndex = 1 - modalIndex; // Toggle between 0 and 1
+        } else if (code == KeyCode.ENTER) {
+            exitModalButtons.get(modalIndex).fire();
+        }
+        updateMenuHighlighting();
+    }
+
+    private void handlePauseMenuKey(KeyCode code) {
+        if (code == KeyCode.UP) {
+            menuIndex = (menuIndex - 1 + pauseButtons.size()) % pauseButtons.size();
+        } else if (code == KeyCode.DOWN) {
+            menuIndex = (menuIndex + 1) % pauseButtons.size();
+        } else if (code == KeyCode.ENTER) {
+            pauseButtons.get(menuIndex).fire();
+        }
+        updateMenuHighlighting();
+    }
+
+    private void updateMenuHighlighting() {
+        // Start Screen Highlight
+        for (int i = 0; i < carCards.size(); i++) {
+            if (i == menuIndex && currentState == GameState.START_SCREEN) {
+                carCards.get(i).setStyle(
+                        "-fx-border-color: cyan; -fx-border-width: 5; -fx-background-color: #333; -fx-effect: dropshadow(three-pass-box, cyan, 10, 0, 0, 0);");
+            } else {
+                carCards.get(i).setStyle("-fx-border-color: white; -fx-border-width: 2; -fx-background-color: #222;");
+            }
+        }
+        // Exit Button Highlight
+        if (startScreenExitBtn != null) {
+            if (menuIndex == carCards.size() && currentState == GameState.START_SCREEN) {
+                startScreenExitBtn.setStyle(
+                        "-fx-background-color: cyan; -fx-text-fill: black; -fx-font-size: 24; -fx-font-weight: bold;");
+            } else {
+                startScreenExitBtn.setStyle(
+                        "-fx-background-color: #333; -fx-text-fill: white; -fx-font-size: 24; -fx-font-weight: bold; -fx-border-color: #555;");
+            }
+        }
+        // Modal Highlight
+        for (int i = 0; i < exitModalButtons.size(); i++) {
+            Button b = exitModalButtons.get(i);
+            if (i == modalIndex && currentState == GameState.EXIT_CONFIRM) {
+                b.setEffect(new javafx.scene.effect.DropShadow(15, Color.CYAN));
+                b.setScaleX(1.1);
+                b.setScaleY(1.1);
+            } else {
+                b.setEffect(null);
+                b.setScaleX(1.0);
+                b.setScaleY(1.0);
+            }
+        }
+        // Pause Menu Highlight
+        for (int i = 0; i < pauseButtons.size(); i++) {
+            if (i == menuIndex && currentState == GameState.PAUSED) {
+                pauseButtons.get(i).setStyle(
+                        "-fx-background-color: cyan; -fx-text-fill: black; -fx-font-size: 24; -fx-font-weight: bold;");
+            } else {
+                pauseButtons.get(i).setStyle(
+                        "-fx-background-color: #333; -fx-text-fill: white; -fx-font-size: 24; -fx-font-weight: bold; -fx-border-color: #555;");
+            }
+        }
+        // Victory Menu Highlight
+        for (int i = 0; i < victoryButtons.size(); i++) {
+            if (i == menuIndex && currentState == GameState.VICTORY) {
+                victoryButtons.get(i).setStyle(
+                        "-fx-background-color: gold; -fx-text-fill: black; -fx-font-size: 24; -fx-font-weight: bold;");
+            } else {
+                victoryButtons.get(i).setStyle(
+                        "-fx-background-color: #333; -fx-text-fill: white; -fx-font-size: 24; -fx-font-weight: bold; -fx-border-color: #555;");
+            }
+        }
+    }
+
+    private void styleMenuButton(Button btn) {
+        btn.setPrefWidth(300);
+        btn.setStyle(
+                "-fx-background-color: #333; -fx-text-fill: white; -fx-font-size: 24; -fx-font-weight: bold; -fx-border-color: #555;");
+        btn.setOnMouseEntered(e -> btn.setStyle(
+                "-fx-background-color: cyan; -fx-text-fill: black; -fx-font-size: 24; -fx-font-weight: bold;"));
+        btn.setOnMouseExited(e -> btn.setStyle(
+                "-fx-background-color: #333; -fx-text-fill: white; -fx-font-size: 24; -fx-font-weight: bold; -fx-border-color: #555;"));
+    }
+
+    private void togglePause() {
+        if (currentState == GameState.RACING) {
+            currentState = GameState.PAUSED;
+            menuIndex = 0; // Reset index for menu
+            pauseMenuUI.setVisible(true);
+            updateMenuHighlighting();
+        } else if (currentState == GameState.PAUSED) {
+            currentState = GameState.RACING;
+            pauseMenuUI.setVisible(false);
+        }
+    }
+
+    private void startRace(F1Team team, VBox menu) {
+        this.selectedTeam = team;
+        menu.setVisible(false);
+
+        // F1 Two-Column Staggered Grid Positions (X, Y pairs)
+        double[][] f1Grid = {
+                { 960, 970 }, // P1
+                { 910, 1010 }, // P2
+                { 860, 970 }, // P3
+                { 810, 1010 }, // P4
+                { 760, 970 } // P5
+        };
+
+        List<Integer> indices = new ArrayList<>();
+        for (int i = 0; i < f1Grid.length; i++)
+            indices.add(i);
+        Collections.shuffle(indices);
+
+        int chosenIdx = indices.get(0);
+        myCar.x = f1Grid[chosenIdx][0];
+        myCar.y = f1Grid[chosenIdx][1];
+        myCar.angle = 0;
+        myCar.velocity = 0;
+        myCar.color = Color.web(team.primary);
+        myCar.accentColor = Color.web(team.accent); // Assuming we add this field to Car
+        myCar.lapCount = 0;
+        myCar.nextCheckpoint = 1;
+
+        countdownTime = 0;
+        currentState = GameState.COUNTDOWN;
+    }
+
+    private void drawStartingLights(GraphicsContext gc) {
+        double startX = 1920 / 2 - 150;
+        double startY = 150;
+
+        // Background gantry
+        gc.setFill(Color.web("#222"));
+        gc.fillRoundRect(startX - 20, startY - 20, 340, 100, 20, 20);
+
+        for (int i = 0; i < 5; i++) {
+            // Light housing
+            gc.setFill(Color.BLACK);
+            gc.fillOval(startX + i * 60, startY, 50, 50);
+
+            // Light logic (F1 style: 1 red light every 0.7s)
+            if (countdownTime > (i + 1) * 0.7 && countdownTime < 3.5) {
+                gc.setFill(Color.RED);
+                gc.setEffect(new javafx.scene.effect.DropShadow(20, Color.RED));
+                gc.fillOval(startX + i * 60 + 5, startY + 5, 40, 40);
+                gc.setEffect(null);
+            } else if (countdownTime >= 3.5) {
+                // Lights out! (Wait 0.5s before state change)
+                gc.setFill(Color.BLACK);
+                gc.fillOval(startX + i * 60 + 5, startY + 5, 40, 40);
+            }
+        }
+    }
+
+    private void drawMenuBackground(GraphicsContext gc) {
+        gc.setFill(Color.web("#0a0a0a"));
+        gc.fillRect(0, 0, 1920, 1080);
+        // Add some "vibe" lines or particles here if desired
+    }
+
+    private void drawUI(GraphicsContext gc) {
+        gc.setFill(Color.WHITE);
+        gc.setFont(Font.font("Arial", 24));
+        gc.fillText(String.format("Lap: %d/%d", myCar.lapCount + 1, TOTAL_LAPS), 20, 40);
+        gc.fillText(String.format("Total Time: %.2fs", gameTime), 20, 70);
+
+        // Lap Timers (Top Right)
+        gc.setTextAlign(TextAlignment.RIGHT);
+        gc.fillText(String.format("Current Lap: %.2fs", currentLapTime), 1900, 40);
+        if (lastLapTime > 0)
+            gc.fillText(String.format("Last Lap: %.2fs", lastLapTime), 1900, 70);
+        if (bestLapTime > 0) {
+            gc.setFill(Color.GOLD);
+            gc.fillText(String.format("BEST: %.2fs", bestLapTime), 1900, 100);
+            gc.setFill(Color.WHITE);
+        }
+        gc.setTextAlign(TextAlignment.LEFT);
+
+        gc.setFill(Color.CYAN);
+        gc.setFont(Font.font("Arial Bold", 36));
+        gc.fillText(String.format("GEAR: %d (%s)", myCar.currentGear, myCar.isAutomatic ? "AUTO" : "MANUAL"), 20, 130);
+        gc.fillText(String.format("%.0f KPH", myCar.getKPH()), 20, 170);
+
+        // DRS Indicator
+        if (inputHandler.getCurrentInput().drsActive) {
+            gc.setFill(Color.LIME);
+            gc.setFont(Font.font("Arial Black", 40));
+            gc.fillText("DRS ACTIVE", 20, 230);
+        } else {
+            gc.setFill(Color.web("#333"));
+            gc.setFont(Font.font("Arial Black", 40));
+            gc.fillText("DRS", 20, 230);
+        }
     }
 
     private void renderVictory(GraphicsContext gc) {
         // Draw a dark overlay
-        gc.setFill(new Color(0, 0, 0, 0.5)); 
+        gc.setFill(new Color(0, 0, 0, 0.5));
         gc.fillRect(0, 0, 1920, 1080);
-        
+
         gc.setFill(Color.GOLD);
         gc.setFont(new javafx.scene.text.Font("Arial Bold", 100));
         gc.fillText("FINISH!", 750, 450);
-        
+
         gc.setFill(Color.WHITE);
         gc.setFont(new javafx.scene.text.Font("Arial", 50));
         gc.fillText(String.format("Final Time: %.2f seconds", gameTime), 680, 550);
@@ -201,7 +677,17 @@ public class GameClient extends Application {
         myCar.lapCount = 0;
         myCar.nextCheckpoint = 0;
         gameTime = 0;
-        isFinished = false;
+        currentLapTime = 0;
+        lastLapTime = 0;
+        // bestLapTime = 0; // KEEP this for the session
+        menuIndex = 0;
+
+        if (startScreenUI != null)
+            startScreenUI.setVisible(true);
+        if (victoryScreenUI != null)
+            victoryScreenUI.setVisible(false);
+        currentState = GameState.START_SCREEN;
+        updateMenuHighlighting();
     }
 
     public void connectToServer(String ip, int port) {
@@ -227,10 +713,12 @@ class InputHandler {
 
     public InputState getCurrentInput() {
         InputState state = new InputState();
-        state.accelerating = pressedKeys.contains(KeyCode.ENTER);
-        state.braking = pressedKeys.contains(KeyCode.S); // S for Reverse/Brake
-        state.turningLeft = pressedKeys.contains(KeyCode.A);
-        state.turningRight = pressedKeys.contains(KeyCode.D);
+        // Support both Enter/W and Arrows for driving
+        state.accelerating = pressedKeys.contains(KeyCode.ENTER) || pressedKeys.contains(KeyCode.UP);
+        state.braking = pressedKeys.contains(KeyCode.S) || pressedKeys.contains(KeyCode.DOWN);
+        state.turningLeft = pressedKeys.contains(KeyCode.A) || pressedKeys.contains(KeyCode.LEFT);
+        state.turningRight = pressedKeys.contains(KeyCode.D) || pressedKeys.contains(KeyCode.RIGHT);
+        state.drsActive = pressedKeys.contains(KeyCode.SPACE);
         return state;
     }
 
@@ -242,25 +730,49 @@ class InputHandler {
 // Renders the track and cars
 class TrackRenderer {
     public void drawTrack(GraphicsContext gc, RaceTrack track) {
-        // 1. Draw Asphalt (Outer Boundary)
-        gc.setFill(Color.web("#333333")); // Dark grey asphalt
-        gc.fillOval(960 - 900, 540 - 500, 1800, 1000);
+        // 1. Draw Asphalt (Outer Stadium)
+        gc.setFill(Color.web("#333333"));
+        gc.fillRoundRect(960 - 900, 540 - 500, 1800, 1000, 1000, 1000);
 
-        // 2. Draw Grass Island (Inner Boundary)
+        // 2. Draw Grass Island (Inner Stadium)
         gc.setFill(Color.DARKGREEN);
-        gc.fillOval(960 - 800, 540 - 400, 1600, 800);
+        gc.fillRoundRect(960 - 800, 540 - 400, 1600, 800, 800, 800);
 
-        // 3. Draw Track Lines (White edges)
+        // 3. Draw Track Lines (White boundaries)
         gc.setStroke(Color.WHITE);
+        gc.setLineWidth(5);
+        gc.strokeRoundRect(960 - 900, 540 - 500, 1800, 1000, 1000, 1000);
+        gc.strokeRoundRect(960 - 800, 540 - 400, 1600, 800, 800, 800);
+
+        // 4. Draw Dashed Center Line
+        gc.setStroke(Color.LIGHTGRAY);
         gc.setLineWidth(2);
-        gc.strokeOval(960 - 900, 540 - 500, 1800, 1000); // Outer edge
-        gc.strokeOval(960 - 800, 540 - 400, 1600, 800); // Inner edge
+        gc.setLineDashes(20.0, 20.0);
+        gc.strokeRoundRect(960 - 850, 540 - 450, 1700, 900, 900, 900);
+        gc.setLineDashes(null);
 
-        // 4. Draw Start/Finish Line
-        gc.setStroke(Color.WHITE);
-        gc.setLineWidth(10);
-        // Drawing a line across the bottom part of the track (Y=940 to 1040 at X=960)
-        gc.strokeLine(960, 940, 960, 1040);
+        // 5. Draw Checkered Start/Finish Line (Bottom)
+        double startX = 960;
+        double topY = 940;
+        double bottomY = 1040;
+        double stripeWidth = 20;
+
+        for (double y = topY; y < bottomY; y += stripeWidth) {
+            gc.setFill(((int) ((y - topY) / stripeWidth) % 2 == 0) ? Color.WHITE : Color.BLACK);
+            gc.fillRect(startX - 10, y, 10, stripeWidth);
+            gc.setFill(((int) ((y - topY) / stripeWidth) % 2 == 0) ? Color.BLACK : Color.WHITE);
+            gc.fillRect(startX, y, 10, stripeWidth);
+        }
+
+        // 6. Draw F1 Staggered Grid Slots
+        gc.setStroke(Color.color(1, 1, 1, 0.4));
+        gc.setLineWidth(2);
+        double[][] f1Grid = {
+                { 960, 970 }, { 910, 1010 }, { 860, 970 }, { 810, 1010 }, { 760, 970 }
+        };
+        for (double[] pos : f1Grid) {
+            gc.strokeRect(pos[0] - 20, pos[1] - 15, 40, 30);
+        }
     }
 
     public void drawCars(GraphicsContext gc, List<Car> allCars) {
@@ -269,11 +781,19 @@ class TrackRenderer {
             gc.translate(car.x, car.y);
             gc.rotate(car.angle);
 
-            // Draw a simple car shape (rectangle with a "front" indicator)
-            gc.setFill(Color.RED);
+            // Draw the car body
+            gc.setFill(car.color);
             gc.fillRect(-15, -10, 30, 20);
+
+            // Draw Team Livery Stripe
+            gc.setFill(car.accentColor);
+            gc.fillRect(-5, -10, 10, 20); // Center stripe
+
+            // Nose/Front Wing
             gc.setFill(Color.BLACK);
-            gc.fillRect(10, -5, 5, 10); // Front lights/nose
+            gc.fillRect(10, -8, 8, 16);
+            gc.setFill(car.accentColor);
+            gc.fillRect(14, -8, 4, 16); // Front wing detail
 
             gc.restore();
         }

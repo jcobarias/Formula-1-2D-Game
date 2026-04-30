@@ -4,31 +4,35 @@ import javafx.scene.shape.Shape;
 // Utility class for physics calculations
 public class PhysicsEngine {
     public static Vector2D calculatePosition(Car car, InputState input, double deltaTime) {
-        // 1. Handle Acceleration/Braking based on Gear
-        double currentAccel = car.acceleration / car.currentGear;
-        double maxSpeed = car.currentGear * 200.0; // Higher gear = higher max speed
+        // 1. Balanced Arcade Acceleration
+        double currentAccel = 400.0 / car.currentGear;
+        double maxSpeed = car.currentGear * 300.0; 
 
         if (input.accelerating) {
             if (car.velocity < maxSpeed) {
                 car.velocity += currentAccel * deltaTime;
             }
         } else if (input.braking) {
-            car.velocity -= car.brakingForce * deltaTime;
+            car.velocity -= 1500.0 * deltaTime;
         }
 
         // 2. Handle Steering (only if moving)
         if (Math.abs(car.velocity) > 0.1) {
             double steeringDirection = 0;
-            if (input.turningLeft) steeringDirection = -1;
-            if (input.turningRight) steeringDirection = 1;
+            if (input.turningLeft)
+                steeringDirection = -1;
+            if (input.turningRight)
+                steeringDirection = 1;
 
             // Faster = wider turns logic (optional, but requested in specs)
             double turnSpeed = car.rotationSpeed * (1.0 - Math.min(Math.abs(car.velocity) / 500.0, 0.5));
             car.angle += steeringDirection * turnSpeed * deltaTime;
         }
 
-        // 3. Apply Friction
-        car.velocity = handleFriction(car.velocity, car.isOffTrack);
+        // 3. Time-Dependent Friction (Reduced if DRS is active)
+        double frictionFactor = car.isOffTrack ? 4.0 : (input.drsActive ? 0.05 : 0.2); 
+        car.velocity -= car.velocity * frictionFactor * deltaTime;
+        if (car.velocity < 0) car.velocity = 0;
 
         // 4. Calculate New Position
         double newX = car.x + Math.cos(Math.toRadians(car.angle)) * car.velocity * deltaTime;
@@ -37,14 +41,7 @@ public class PhysicsEngine {
         return new Vector2D(newX, newY);
     }
 
-    public static double handleFriction(double speed, boolean isOffTrack) {
-        double friction = isOffTrack ? 0.95 : 0.99; // Simple decay
-        if (isOffTrack) {
-            // Apply heavy multiplier as per specs
-            speed *= 0.3; // This might be too aggressive every frame, usually it's a cap or a higher decay
-        }
-        return speed * friction;
-    }
+    // Removed old handleFriction to fix the 'Gear 2' bottleneck
 
     public static int isColliding(Shape carBounds, List<Shape> obstacles) {
         for (int i = 0; i < obstacles.size(); i++) {
@@ -61,7 +58,11 @@ public class PhysicsEngine {
 // Simple 2D vector class
 class Vector2D {
     public double x, y;
-    public Vector2D(double x, double y) { this.x = x; this.y = y; }
+
+    public Vector2D(double x, double y) {
+        this.x = x;
+        this.y = y;
+    }
 }
 
 // Placeholder for Car and InputState classes
@@ -71,27 +72,29 @@ class Car {
     public double brakingForce = 300.0;
     public double rotationSpeed = 150.0;
     public boolean isOffTrack = false;
-    
+    public javafx.scene.paint.Color color = javafx.scene.paint.Color.RED;
+    public javafx.scene.paint.Color accentColor = javafx.scene.paint.Color.WHITE;
+
     // Race Progress
     public int lapCount = 0;
     public int nextCheckpoint = 0;
-    
+
     // Gear System
     public int currentGear = 1;
-    public final int MAX_GEAR = 6;
-    public boolean isAutomatic = true; // Default to Auto
+    public final int MAX_GEAR = 8;
+    public boolean isAutomatic = true; 
+    public boolean drsActive = false;
 
     public void updateAutomaticGears() {
         if (!isAutomatic) return;
-
-        double maxSpeedForGear = currentGear * 200.0;
         
+        double kph = getKPH();
         // Shift Up
-        if (velocity > maxSpeedForGear * 0.9 && currentGear < MAX_GEAR) {
+        if (kph > currentGear * 42 && currentGear < MAX_GEAR) {
             currentGear++;
         }
         // Shift Down
-        if (velocity < maxSpeedForGear * 0.4 && currentGear > 1) {
+        if (kph < (currentGear - 1) * 38 && currentGear > 1) {
             currentGear--;
         }
     }
@@ -115,4 +118,5 @@ class InputState {
     public boolean turningRight;
     public boolean gearUp;
     public boolean gearDown;
+    public boolean drsActive;
 }
