@@ -763,6 +763,7 @@ public class GameClient extends Application {
         gc.translate(-cameraX, -cameraY);
         trackRenderer.drawTrack(gc, raceTrack);
         trackRenderer.drawCars(gc, List.of(myCar));
+        trackRenderer.drawInfield(gc);
         gc.restore();
 
         drawUI(gc);
@@ -872,4 +873,53 @@ class TrackRenderer {
             gc.restore();
         }
     }
+
+    public void drawInfield(GraphicsContext gc) {
+        // Infield dimensions
+        double x = 1920/2.0 - 650;
+        double y = 1080/2.0 - 350;
+        double w = 1300;
+        double h = 700;
+
+        // 1. Draw the Base Grass Oval
+        gc.setFill(new javafx.scene.paint.RadialGradient(0, 0, x + w/2, y + h/2, w/2, false, 
+                javafx.scene.paint.CycleMethod.NO_CYCLE,
+                new javafx.scene.paint.Stop(0, Color.web("#2e5d28")), 
+                new javafx.scene.paint.Stop(1, Color.web("#3b7a34"))));
+        gc.fillOval(x, y, w, h);
+
+        // --- CLIPPING START ---
+        // We save the state so we can remove the clip later
+        gc.save(); 
+        
+        // Define the clipping area (the oval)
+        gc.beginPath();
+        gc.arc(x + w/2, y + h/2, w/2, h/2, 0, 360); 
+        gc.clip();
+
+        // 2. Draw Mowing Stripes (Now safely clipped inside the oval)
+        gc.setFill(Color.rgb(255, 255, 255, 0.05)); 
+        int numStripes = 24;
+        double stripeWidth = w / numStripes;
+        for (int i = 0; i < numStripes; i++) {
+            if (i % 2 == 0) {
+                gc.fillRect(x + (i * stripeWidth), y, stripeWidth, h);
+            }
+        }
+
+        // 3. Draw Procedural Grass (Also clipped for safety)
+        gc.setStroke(Color.web("#346b2f"));
+        gc.setLineWidth(1.0);
+        java.util.Random grassRand = new java.util.Random(42); 
+        for (int i = 0; i < 5000; i++) {
+            double gx = x + grassRand.nextDouble() * w;
+            double gy = y + grassRand.nextDouble() * h;
+            // Small blades
+            gc.strokeLine(gx, gy, gx + (grassRand.nextDouble() - 0.5) * 3, gy - 2);
+        }
+
+        // --- CLIPPING END ---
+        gc.restore(); // Removes the clip so later drawing (cars/UI) isn't hidden
+    }
+
 }

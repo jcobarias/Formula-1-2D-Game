@@ -1,13 +1,16 @@
 Vector2D.class
 PhysicsEngine.class
+F1Team.class
 RaceManager.class
 Player.class
 InputHandler.class
+GameState.class
 CarState.class
 TrackRenderer.class
 GameClient$1.class
 GameClient.class
 GameServer.class
+Confetti.class
 InputState.class
 RaceTrack.class
 Car.class
