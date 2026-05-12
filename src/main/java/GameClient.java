@@ -19,7 +19,11 @@ import java.util.Set;
 import java.util.Collections;
 
 enum GameState {
-    START_SCREEN, RACING, VICTORY, PAUSED, EXIT_CONFIRM, COUNTDOWN, PODIUM
+    START_SCREEN, RACING, VICTORY, PAUSED, EXIT_CONFIRM, COUNTDOWN, PODIUM;
+    private Socket socket;
+    private BufferedReader in;
+    private PrintWriter out;
+
 }
 
 class Confetti {
@@ -95,6 +99,7 @@ public class GameClient extends Application {
         StackPane root = new StackPane();
         Canvas canvas = new Canvas(1920, 1080);
         GraphicsContext gc = canvas.getGraphicsContext2D();
+        connectToServer("127.0.0.1", 12345);
 
         // UI Menus
         this.startScreenUI = createStartScreenUI();
@@ -671,6 +676,26 @@ public class GameClient extends Application {
 
     public void connectToServer(String ip, int port) {
         // TODO: Initialize socket connection
+        try {
+            socket = new Socket(ip, port);
+            in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+            out = new PrintWriter(socket.getOutputStream(), true);
+            System.out.println("Connected to server at " + ip + ":" + port);
+
+            // Start listening thread
+            new Thread(() -> {
+                String message;
+                try {
+                    while ((message = in.readLine()) != null) {
+                        handleServerMessage(message);
+                    }
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }).start();
+        } catch (IOException e) {
+            System.err.println("Failed to connect: " + e.getMessage());
+        }
     }
 
     private void spawnConfetti() {
