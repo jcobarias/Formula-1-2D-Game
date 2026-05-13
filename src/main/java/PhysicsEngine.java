@@ -75,6 +75,11 @@ class Car {
     public javafx.scene.paint.Color color = javafx.scene.paint.Color.RED;
     public javafx.scene.paint.Color accentColor = javafx.scene.paint.Color.WHITE;
 
+    // Networking Interpolation
+    public double targetX, targetY, targetAngle;
+    public long lastSequenceNumber = -1;
+    public int teamOrdinal = -1;
+
     // Race Progress
     public int lapCount = 0;
     public int nextCheckpoint = 0;
