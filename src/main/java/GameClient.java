@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.Collections;
+import java.util.Map;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
@@ -73,7 +74,7 @@ public class GameClient extends Application {
     private InetAddress serverAddress;
     private int serverPort;
     private int playerID = (int) (Math.random() * 10000); // Random ID for now
-    private ConcurrentHashMap<Integer, Car> otherCars = new ConcurrentHashMap<>();
+    private Map<Integer, Car> otherCars = new ConcurrentHashMap<>();
     private double lastSendTime = 0;
     private static final double SEND_INTERVAL = 1.0 / 30.0; // Send 30 times per second
     private long currentSequenceNumber = 0;
@@ -85,7 +86,7 @@ public class GameClient extends Application {
     private int TOTAL_LAPS = 3;
     private boolean isMultiplayer = false;
     private int REQUIRED_PLAYERS = 2;
-    
+
     private double gameTime = 0;
     private double countdownTime = 0;
     private double currentLapTime = 0;
@@ -95,15 +96,16 @@ public class GameClient extends Application {
 
     private VBox modeSelectionUI;
     private VBox stagingUI;
+    private VBox stagingPlayerList;
     private Text stagingStatusText;
-    private List<HBox> playerSlots = new ArrayList<>();
+    private List<HBox> stagingPlayerSlots = new ArrayList<>();
     private VBox startScreenUI;
     private VBox readyWaitUI;
     private Text readyWaitStatusText;
     private VBox pauseMenuUI;
     private VBox exitConfirmUI;
     private VBox victoryScreenUI; // Victory Overlay
-    
+
     // Camera & Cinematic
     private double cameraX = 0;
     private double cameraY = 0;
@@ -134,21 +136,21 @@ public class GameClient extends Application {
         this.exitConfirmUI = createExitConfirmUI();
         this.victoryScreenUI = createVictoryScreenUI();
 
-        root.getChildren().addAll(canvas, modeSelectionUI, stagingUI, readyWaitUI, startScreenUI, pauseMenuUI, victoryScreenUI, exitConfirmUI);
-        
+        root.getChildren().addAll(canvas, modeSelectionUI, stagingUI, readyWaitUI, startScreenUI, pauseMenuUI,
+                victoryScreenUI, exitConfirmUI);
+
         // Wrap root in a scalable Group to fit any screen resolution dynamically
         Group scalableGroup = new Group(root);
         StackPane outerRoot = new StackPane(scalableGroup);
         outerRoot.setStyle("-fx-background-color: black;"); // Adds letterboxing
-        
+
         Scene scene = new Scene(outerRoot, 1280, 720); // Starts at a comfortable 720p window
-        
+
         // Bind the scale to the window's dimensions (maintaining 16:9 aspect ratio)
         Scale scale = new Scale();
         scale.xProperty().bind(Bindings.min(
-            scene.widthProperty().divide(1920.0),
-            scene.heightProperty().divide(1080.0)
-        ));
+                scene.widthProperty().divide(1920.0),
+                scene.heightProperty().divide(1080.0)));
         scale.yProperty().bind(scale.xProperty());
         root.getTransforms().add(scale);
 
@@ -225,14 +227,14 @@ public class GameClient extends Application {
 
                 if (currentState == GameState.STAGING) {
                     drawMenuBackground(gc);
-                    
+
                     // Only update UI if count changed or every 0.5s
                     int currentCount = otherCars.size() + 1;
                     if (currentCount != lastKnownPlayerCount || System.currentTimeMillis() % 500 < 20) {
                         updateStagingUI();
                         lastKnownPlayerCount = currentCount;
                     }
-                    
+
                     // Send lobby heartbeat
                     lastSendTime += deltaTime;
                     if (lastSendTime >= SEND_INTERVAL) {
@@ -251,7 +253,7 @@ public class GameClient extends Application {
 
                 if (currentState == GameState.START_SCREEN) {
                     drawMenuBackground(gc);
-                    
+
                     // Send choice heartbeat
                     lastSendTime += deltaTime;
                     if (lastSendTime >= SEND_INTERVAL) {
@@ -263,21 +265,23 @@ public class GameClient extends Application {
 
                 if (currentState == GameState.READY_WAIT) {
                     drawMenuBackground(gc);
-                    
+
                     int readyCount = 1; // Includes me
                     for (Car c : otherCars.values()) {
-                        if (c.teamOrdinal != -1) readyCount++;
+                        if (c.teamOrdinal != -1)
+                            readyCount++;
                     }
-                    
-                    readyWaitStatusText.setText(String.format("WAITING FOR DRIVERS TO SELECT TEAM (%d / %d)...", readyCount, REQUIRED_PLAYERS));
-                    
+
+                    readyWaitStatusText.setText(String.format("WAITING FOR DRIVERS TO SELECT TEAM (%d / %d)...",
+                            readyCount, REQUIRED_PLAYERS));
+
                     // Keep broadcasting my selection so the server knows
                     lastSendTime += deltaTime;
                     if (lastSendTime >= SEND_INTERVAL) {
                         sendCarState();
                         lastSendTime = 0;
                     }
-                    
+
                     // Transition is now handled by the server's broadcast in receiveOtherCars
                     return;
                 }
@@ -301,7 +305,7 @@ public class GameClient extends Application {
                 if (currentState == GameState.VICTORY) {
                     gc.getCanvas().setEffect(new javafx.scene.effect.BoxBlur(10, 10, 3));
                     updateVictoryUI(gc);
-                    runRaceLogic(0, gc); 
+                    runRaceLogic(0, gc);
                     return;
                 } else {
                     gc.getCanvas().setEffect(null);
@@ -325,8 +329,16 @@ public class GameClient extends Application {
                 // --- RACING STATE ---
                 gameTime += deltaTime;
                 currentLapTime += deltaTime;
-                cameraX = 0; cameraY = 0; // Keep camera fixed during race
+                cameraX = 0;
+                cameraY = 0; // Keep camera fixed during race
                 runRaceLogic(deltaTime, gc);
+
+                // Send heartbeat during race
+                lastSendTime += deltaTime;
+                if (lastSendTime >= SEND_INTERVAL) {
+                    sendCarState();
+                    lastSendTime = 0;
+                }
             }
         }.start();
 
@@ -342,45 +354,67 @@ public class GameClient extends Application {
         // We'll call this only if Multiplayer is selected
     }
 
+    private Button createMenuButton(String text) {
+        Button btn = new Button(text);
+        styleMenuButton(btn);
+        return btn;
+    }
+
+    private HBox createPlayerSlot(String name) {
+        HBox slot = new HBox(20);
+        slot.setAlignment(Pos.CENTER_LEFT);
+        slot.setPadding(new Insets(15, 30, 15, 30));
+        slot.setStyle("-fx-background-color: #222; -fx-border-color: #444; -fx-border-width: 1;");
+        slot.setPrefWidth(600);
+
+        Circle statusCircle = new Circle(10, Color.GRAY);
+        Text driverName = new Text(name);
+        driverName.setFont(Font.font("Arial", 20));
+        driverName.setFill(Color.GRAY);
+
+        slot.getChildren().addAll(statusCircle, driverName);
+        return slot;
+    }
+
     private VBox createModeSelectionUI() {
         VBox menu = new VBox(50);
         menu.setAlignment(Pos.CENTER);
         menu.setStyle("-fx-background-color: #050505;");
-        
+
         Text title = new Text("GRIDRUSH F1");
         title.setFont(Font.font("Arial Black", 100));
         title.setFill(Color.WHITE);
         title.setEffect(new javafx.scene.effect.Glow(0.8));
 
-        Button singleBtn = new Button("SINGLE PLAYER");
-        styleMenuButton(singleBtn);
-        singleBtn.setOnAction(e -> {
-            isMultiplayer = false;
-            currentState = GameState.START_SCREEN;
-            modeSelectionUI.setVisible(false);
-            startScreenUI.setVisible(true);
-            updateMenuHighlighting();
-        });
+        Text subtitle = new Text("SELECT GAME MODE");
+        subtitle.setFont(Font.font("Arial", 30));
+        subtitle.setFill(Color.GRAY);
 
-        Button multiBtn = new Button("MULTIPLAYER");
-        styleMenuButton(multiBtn);
-        multiBtn.setOnAction(e -> {
-            isMultiplayer = true;
-            currentState = GameState.STAGING;
-            modeSelectionUI.setVisible(false);
-            stagingUI.setVisible(true);
-            connectToServer("localhost", 9876); // Connect to lobby
-            updateMenuHighlighting();
-        });
+        Button singlePlayerBtn = createMenuButton("SINGLE PLAYER");
+        Button multiPlayer2Btn = createMenuButton("MULTIPLAYER (2 PLAYERS)");
+        Button multiPlayer4Btn = createMenuButton("MULTIPLAYER (4 PLAYERS)");
 
-        menu.getChildren().addAll(title, singleBtn, multiBtn);
+        singlePlayerBtn.setOnAction(e -> startSinglePlayer());
+        multiPlayer2Btn.setOnAction(e -> startMultiplayer(2));
+        multiPlayer4Btn.setOnAction(e -> startMultiplayer(4));
+
+        menu.getChildren().addAll(title, subtitle, singlePlayerBtn, multiPlayer2Btn, multiPlayer4Btn);
         return menu;
+    }
+
+    private void startSinglePlayer() {
+        isMultiplayer = false;
+        currentState = GameState.START_SCREEN;
+        modeSelectionUI.setVisible(false);
+        startScreenUI.setVisible(true);
+        updateMenuHighlighting();
     }
 
     private VBox createStagingUI() {
         VBox menu = new VBox(40);
         menu.setAlignment(Pos.CENTER);
-        menu.setStyle("-fx-background-color: rgba(10, 10, 10, 0.95); -fx-border-color: cyan; -fx-border-width: 3; -fx-padding: 50;");
+        menu.setStyle(
+                "-fx-background-color: rgba(10, 10, 10, 0.95); -fx-border-color: cyan; -fx-border-width: 3; -fx-padding: 50;");
         menu.setMaxSize(1000, 700);
         menu.setVisible(false);
 
@@ -393,49 +427,38 @@ public class GameClient extends Application {
         stagingStatusText.setFont(Font.font("Arial Bold", 24));
         stagingStatusText.setFill(Color.WHITE);
 
-        VBox slotsContainer = new VBox(15);
-        slotsContainer.setAlignment(Pos.CENTER);
-        
-        for (int i = 0; i < REQUIRED_PLAYERS; i++) {
-            HBox slot = new HBox(20);
-            slot.setAlignment(Pos.CENTER_LEFT);
-            slot.setPadding(new Insets(15, 30, 15, 30));
-            slot.setStyle("-fx-background-color: #222; -fx-border-color: #444; -fx-border-width: 1;");
-            slot.setPrefWidth(600);
+        stagingPlayerList = new VBox(15);
+        stagingPlayerList.setAlignment(Pos.CENTER);
 
-            Circle statusCircle = new Circle(10, Color.GRAY);
-            Text driverName = new Text("DRIVER " + (i + 1) + ": EMPTY SLOT");
-            driverName.setFont(Font.font("Arial", 20));
-            driverName.setFill(Color.GRAY);
-
-            slot.getChildren().addAll(statusCircle, driverName);
-            slotsContainer.getChildren().add(slot);
-            playerSlots.add(slot);
-        }
-
-        menu.getChildren().addAll(title, stagingStatusText, slotsContainer);
+        menu.getChildren().addAll(title, stagingStatusText, stagingPlayerList);
         return menu;
     }
 
     private void updateStagingUI() {
-        if (stagingUI == null || !stagingUI.isVisible()) return;
+        if (stagingUI == null || !stagingUI.isVisible())
+            return;
 
         int currentCount = otherCars.size() + 1;
-        stagingStatusText.setText(String.format("READY STATUS: %d / %d DRIVERS CONNECTED", currentCount, REQUIRED_PLAYERS));
+        stagingStatusText
+                .setText(String.format("READY STATUS: %d / %d DRIVERS CONNECTED", currentCount, REQUIRED_PLAYERS));
 
         // Update Slot 1 (Local Player)
-        HBox mySlot = playerSlots.get(0);
-        ((Circle) mySlot.getChildren().get(0)).setFill(Color.LIME);
-        ((Text) mySlot.getChildren().get(1)).setText("DRIVER 1: YOU (ID: " + playerID + ")");
-        ((Text) mySlot.getChildren().get(1)).setFill(Color.WHITE);
-        mySlot.setStyle("-fx-background-color: #333; -fx-border-color: cyan; -fx-border-width: 2;");
+        if (!stagingPlayerSlots.isEmpty()) {
+            HBox mySlot = stagingPlayerSlots.get(0);
+            ((Circle) mySlot.getChildren().get(0)).setFill(Color.LIME);
+            ((Text) mySlot.getChildren().get(1)).setText("DRIVER 1: YOU (ID: " + playerID + ")");
+            ((Text) mySlot.getChildren().get(1)).setFill(Color.WHITE);
+            mySlot.setStyle("-fx-background-color: #333; -fx-border-color: cyan; -fx-border-width: 2;");
+        }
 
         // Update Other Slots
         List<Integer> ids = new ArrayList<>(otherCars.keySet());
         Collections.sort(ids);
 
         for (int i = 1; i < REQUIRED_PLAYERS; i++) {
-            HBox slot = playerSlots.get(i);
+            if (i >= stagingPlayerSlots.size())
+                break;
+            HBox slot = stagingPlayerSlots.get(i);
             Circle circle = (Circle) slot.getChildren().get(0);
             Text text = (Text) slot.getChildren().get(1);
 
@@ -499,6 +522,19 @@ public class GameClient extends Application {
             card.getChildren().addAll(preview, name, joinBtn);
             carBox.getChildren().add(card);
             carCards.add(card);
+
+            // Mouse interaction for the card
+            final int index = carCards.size() - 1;
+            card.setOnMouseEntered(e -> {
+                menuIndex = index;
+                updateMenuHighlighting();
+            });
+            card.setOnMouseClicked(e -> {
+                if (!isTeamTaken(team.ordinal())) {
+                    myCar.teamOrdinal = team.ordinal();
+                    startRace(team, menu);
+                }
+            });
         }
         updateMenuHighlighting();
 
@@ -622,25 +658,46 @@ public class GameClient extends Application {
                 startScreenUI.setVisible(true);
                 menuIndex = 0; // Reset for car selection
             } else { // Multiplayer
-                isMultiplayer = true;
-                currentState = GameState.STAGING;
-                modeSelectionUI.setVisible(false);
-                stagingUI.setVisible(true);
-                connectToServer("localhost", 9876);
+                startMultiplayer(2); // Default to 2 if using keyboard Enter
             }
         }
         updateMenuHighlighting();
     }
 
+    private void startMultiplayer(int players) {
+        this.REQUIRED_PLAYERS = players;
+        this.isMultiplayer = true;
+        this.otherCars.clear();
+
+        // Rebuild dynamic lobby slots
+        stagingPlayerSlots.clear();
+        stagingPlayerList.getChildren().clear();
+        for (int i = 0; i < REQUIRED_PLAYERS; i++) {
+            HBox slot = createPlayerSlot(i == 0 ? "YOU" : "WAITING...");
+            if (i == 0)
+                slot.setStyle("-fx-background-color: #222; -fx-border-color: #0f0; -fx-border-width: 2;");
+            stagingPlayerSlots.add(slot);
+            stagingPlayerList.getChildren().add(slot);
+        }
+
+        currentState = GameState.STAGING;
+        modeSelectionUI.setVisible(false);
+        stagingUI.setVisible(true);
+        connectToServer("localhost", 9876); // Connect to lobby
+    }
+
     private void handleStartMenuKey(KeyCode code) {
-        if (code == KeyCode.LEFT && menuIndex < carCards.size()) {
-            menuIndex = (menuIndex - 1 + carCards.size()) % carCards.size();
-        } else if (code == KeyCode.RIGHT && menuIndex < carCards.size()) {
-            menuIndex = (menuIndex + 1) % carCards.size();
+        if (code == KeyCode.LEFT) {
+            if (menuIndex >= carCards.size()) menuIndex = carCards.size() - 1;
+            else menuIndex = (menuIndex - 1 + carCards.size()) % carCards.size();
+        } else if (code == KeyCode.RIGHT) {
+            if (menuIndex >= carCards.size()) menuIndex = 0;
+            else menuIndex = (menuIndex + 1) % carCards.size();
         } else if (code == KeyCode.DOWN && menuIndex < carCards.size()) {
             menuIndex = carCards.size(); // Focus Exit Button
-        } else if (code == KeyCode.UP && menuIndex == carCards.size()) {
-            menuIndex = 0; // Focus first car card
+        } else if (code == KeyCode.UP) {
+            if (menuIndex >= carCards.size()) menuIndex = 0; // Focus first car card
+            else menuIndex = carCards.size(); // Wrap around to exit button? (Optional)
         } else if (code == KeyCode.ENTER) {
             if (menuIndex < carCards.size()) {
                 F1Team team = F1Team.values()[menuIndex];
@@ -743,14 +800,16 @@ public class GameClient extends Application {
                 if (node instanceof Button) {
                     Button b = (Button) node;
                     if (i == menuIndex + 1) {
-                        b.setStyle("-fx-background-color: cyan; -fx-text-fill: black; -fx-font-size: 24; -fx-font-weight: bold;");
+                        b.setStyle(
+                                "-fx-background-color: cyan; -fx-text-fill: black; -fx-font-size: 24; -fx-font-weight: bold;");
                     } else {
-                        b.setStyle("-fx-background-color: #333; -fx-text-fill: white; -fx-font-size: 24; -fx-font-weight: bold; -fx-border-color: #555;");
+                        b.setStyle(
+                                "-fx-background-color: #333; -fx-text-fill: white; -fx-font-size: 24; -fx-font-weight: bold; -fx-border-color: #555;");
                     }
                 }
             }
         }
-        
+
         Set<Integer> takenOrdinals = getTakenTeamOrdinals();
 
         // Start Screen Highlight
@@ -771,7 +830,8 @@ public class GameClient extends Application {
                 }
             } else {
                 if (taken) {
-                    card.setStyle("-fx-border-color: #500; -fx-border-width: 2; -fx-background-color: #1a1a1a; -fx-opacity: 0.5;");
+                    card.setStyle(
+                            "-fx-border-color: #500; -fx-border-width: 2; -fx-background-color: #1a1a1a; -fx-opacity: 0.5;");
                     btn.setText("TAKEN");
                     btn.setDisable(true);
                 } else {
@@ -934,9 +994,10 @@ public class GameClient extends Application {
             gc.fillText(String.format("BEST: %.2fs", bestLapTime), 1900, 100);
             gc.setFill(Color.WHITE);
         }
-        
+
         // DRS Status
-        String drsStatus = myCar.drsActive ? "OPEN" : (raceTrack.isInDrsZone(myCar.x, myCar.y) ? "AVAILABLE" : "LOCKED");
+        String drsStatus = myCar.drsActive ? "OPEN"
+                : (raceTrack.isInDrsZone(myCar.x, myCar.y) ? "AVAILABLE" : "LOCKED");
         gc.setFill(myCar.drsActive ? Color.LIME : (drsStatus.equals("AVAILABLE") ? Color.WHITE : Color.GRAY));
         gc.fillText("DRS: " + drsStatus, 1900, 130);
 
@@ -987,15 +1048,16 @@ public class GameClient extends Application {
 
     public void connectToServer(String ip, int port) {
         try {
+            otherCars.clear(); // Clear ghosts from previous sessions
             this.socket = new DatagramSocket();
             this.serverAddress = InetAddress.getByName(ip);
             this.serverPort = port;
-            
+
             // Start receiver thread
             Thread receiverThread = new Thread(this::receiveOtherCars);
             receiverThread.setDaemon(true);
             receiverThread.start();
-            
+
             System.out.println("Connected to server at " + ip + ":" + port + " with ID " + playerID);
         } catch (Exception e) {
             e.printStackTrace();
@@ -1008,12 +1070,15 @@ public class GameClient extends Application {
             try {
                 DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
                 socket.receive(packet);
-                CarState state = CarState.deserialize(packet.getData());
+                CarState state = CarState.deserialize(packet.getData(), packet.getOffset(), packet.getLength());
                 
+                System.out.println("DEBUG: Received packet from ID " + state.playerID + " (Type: " + (state.playerID == -999 ? "SERVER" : "PLAYER") + ")");
+
                 // Check for Server Authoritative Start Signal
                 if (state.playerID == -999 && state.isRaceStarted) {
-                    if (currentState == GameState.READY_WAIT) {
+                    if (currentState == GameState.READY_WAIT || currentState == GameState.STAGING) {
                         javafx.application.Platform.runLater(() -> {
+                            stagingUI.setVisible(false);
                             readyWaitUI.setVisible(false);
                             countdownTime = 0;
                             currentState = GameState.COUNTDOWN;
@@ -1023,9 +1088,14 @@ public class GameClient extends Application {
                 }
 
                 if (state.playerID != this.playerID) {
+                    // Sync lobby size with other players/server
+                    if (state.requiredPlayers > 0 && this.REQUIRED_PLAYERS != state.requiredPlayers) {
+                        this.REQUIRED_PLAYERS = state.requiredPlayers;
+                    }
+
                     Car remoteCar = otherCars.computeIfAbsent(state.playerID, id -> {
                         Car c = new Car();
-                        c.color = Color.GRAY; 
+                        c.color = Color.GRAY;
                         c.x = state.x;
                         c.y = state.y;
                         c.targetX = state.x;
@@ -1033,7 +1103,7 @@ public class GameClient extends Application {
                         c.targetAngle = state.angle;
                         return c;
                     });
-                    
+
                     // Ignore old packets
                     if (state.sequenceNumber > remoteCar.lastSequenceNumber) {
                         remoteCar.lastSequenceNumber = state.sequenceNumber;
@@ -1041,7 +1111,7 @@ public class GameClient extends Application {
                         remoteCar.targetY = state.y;
                         remoteCar.targetAngle = state.angle;
                         remoteCar.velocity = state.velocity;
-                        
+
                         if (remoteCar.teamOrdinal != state.teamOrdinal) {
                             remoteCar.teamOrdinal = state.teamOrdinal; // Sync team choice
                             // Force UI update if someone picks a team
@@ -1050,14 +1120,16 @@ public class GameClient extends Application {
                     }
                 }
             } catch (Exception e) {
-                // Socket might be closed or timed out
+                System.err.println("CRITICAL: Error in receiver thread:");
+                e.printStackTrace();
             }
         }
     }
 
     private boolean isTeamTaken(int ordinal) {
         for (Car c : otherCars.values()) {
-            if (c.teamOrdinal == ordinal) return true;
+            if (c.teamOrdinal == ordinal)
+                return true;
         }
         return false;
     }
@@ -1065,13 +1137,15 @@ public class GameClient extends Application {
     private Set<Integer> getTakenTeamOrdinals() {
         Set<Integer> taken = new HashSet<>();
         for (Car c : otherCars.values()) {
-            if (c.teamOrdinal != -1) taken.add(c.teamOrdinal);
+            if (c.teamOrdinal != -1)
+                taken.add(c.teamOrdinal);
         }
         return taken;
     }
 
     private void sendCarState() {
-        if (socket == null) return;
+        if (socket == null)
+            return;
         try {
             CarState state = new CarState();
             state.playerID = this.playerID;
@@ -1082,6 +1156,8 @@ public class GameClient extends Application {
             state.currentLap = myCar.lapCount;
             state.sequenceNumber = ++currentSequenceNumber;
             state.teamOrdinal = myCar.teamOrdinal;
+            state.isRaceStarted = (currentState == GameState.RACING);
+            state.requiredPlayers = REQUIRED_PLAYERS;
 
             byte[] data = state.serialize();
             DatagramPacket packet = new DatagramPacket(data, data.length, serverAddress, serverPort);
@@ -1129,7 +1205,7 @@ public class GameClient extends Application {
         myCar.x = newPos.x;
         myCar.y = newPos.y;
         myCar.updateAutomaticGears();
-        
+
         // DRS Zone Logic: Only allow DRS if in the zone
         boolean inZone = raceTrack.isInDrsZone(myCar.x, myCar.y);
         myCar.drsActive = input.drsActive && inZone;
@@ -1185,11 +1261,13 @@ public class GameClient extends Application {
             double lerpFactor = 0.2;
             remoteCar.x += (remoteCar.targetX - remoteCar.x) * lerpFactor;
             remoteCar.y += (remoteCar.targetY - remoteCar.y) * lerpFactor;
-            
+
             // Handle angle wrap-around for smoother rotation
             double diff = remoteCar.targetAngle - remoteCar.angle;
-            while (diff < -180) diff += 360;
-            while (diff > 180) diff -= 360;
+            while (diff < -180)
+                diff += 360;
+            while (diff > 180)
+                diff -= 360;
             remoteCar.angle += diff * lerpFactor;
         }
 
@@ -1199,13 +1277,13 @@ public class GameClient extends Application {
         gc.fillRect(0, 0, 1920, 1080);
         gc.translate(-cameraX, -cameraY);
         trackRenderer.drawTrack(gc, raceTrack);
-        
+
         // Draw all cars (Me + Others)
         List<Car> allCars = new ArrayList<>();
         allCars.add(myCar);
         allCars.addAll(otherCars.values());
         trackRenderer.drawCars(gc, allCars);
-        
+
         gc.restore();
 
         // Throttle state sending (e.g. 30Hz)

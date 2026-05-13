@@ -10,9 +10,10 @@ public class CarState {
     public long sequenceNumber;
     public int teamOrdinal = -1; // -1 means no team selected yet
     public boolean isRaceStarted = false;
+    public int requiredPlayers = -1; // New field for dynamic lobby capacity
 
     public byte[] serialize() {
-        ByteBuffer buffer = ByteBuffer.allocate(53); // Increased size
+        ByteBuffer buffer = ByteBuffer.allocate(57);
         buffer.putInt(playerID);
         buffer.putDouble(x);
         buffer.putDouble(y);
@@ -22,27 +23,33 @@ public class CarState {
         buffer.putLong(sequenceNumber);
         buffer.putInt(teamOrdinal);
         buffer.put((byte) (isRaceStarted ? 1 : 0));
+        buffer.putInt(requiredPlayers);
         return buffer.array();
     }
 
     public static CarState deserialize(byte[] data) {
-        ByteBuffer buffer = ByteBuffer.wrap(data);
+        return deserialize(data, 0, data.length);
+    }
+
+    public static CarState deserialize(byte[] data, int offset, int length) {
+        ByteBuffer buffer = ByteBuffer.wrap(data, offset, length);
         CarState state = new CarState();
+        if (buffer.remaining() < 4) return state;
+        
         state.playerID = buffer.getInt();
         state.x = buffer.getDouble();
         state.y = buffer.getDouble();
         state.velocity = buffer.getDouble();
         state.angle = buffer.getDouble();
         state.currentLap = buffer.getInt();
-        if (buffer.remaining() >= 8) {
-            state.sequenceNumber = buffer.getLong();
-        }
+        state.sequenceNumber = buffer.getLong();
+        state.teamOrdinal = buffer.getInt();
+        state.isRaceStarted = buffer.get() == 1;
+        
         if (buffer.remaining() >= 4) {
-            state.teamOrdinal = buffer.getInt();
+            state.requiredPlayers = buffer.getInt();
         }
-        if (buffer.remaining() >= 1) {
-            state.isRaceStarted = buffer.get() == 1;
-        }
+        
         return state;
     }
 }
