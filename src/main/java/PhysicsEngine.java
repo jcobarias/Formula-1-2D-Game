@@ -30,7 +30,7 @@ public class PhysicsEngine {
         }
 
         // 3. Time-Dependent Friction (Reduced if DRS is active)
-        double frictionFactor = car.isOffTrack ? 4.0 : (input.drsActive ? 0.05 : 0.2); 
+        double frictionFactor = car.isOffTrack ? 4.0 : (car.drsActive ? 0.05 : 0.2); 
         car.velocity -= car.velocity * frictionFactor * deltaTime;
         if (car.velocity < 0) car.velocity = 0;
 

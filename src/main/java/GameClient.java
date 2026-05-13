@@ -351,7 +351,7 @@ public class GameClient extends Application {
 
         Button exitBtn = new Button("EXIT");
         styleMenuButton(exitBtn);
-        exitBtn.setOnAction(e -> System.exit(0));
+        exitBtn.setOnAction(e -> showExitConfirm());
         pauseButtons.add(exitBtn);
 
         menu.getChildren().addAll(title, resumeBtn, homeBtn, exitBtn);
@@ -614,6 +614,12 @@ public class GameClient extends Application {
             gc.fillText(String.format("BEST: %.2fs", bestLapTime), 1900, 100);
             gc.setFill(Color.WHITE);
         }
+        
+        // DRS Status
+        String drsStatus = myCar.drsActive ? "OPEN" : (raceTrack.isInDrsZone(myCar.x, myCar.y) ? "AVAILABLE" : "LOCKED");
+        gc.setFill(myCar.drsActive ? Color.LIME : (drsStatus.equals("AVAILABLE") ? Color.WHITE : Color.GRAY));
+        gc.fillText("DRS: " + drsStatus, 1900, 130);
+
         gc.setTextAlign(TextAlignment.LEFT);
 
         gc.setFill(Color.CYAN);
@@ -621,16 +627,6 @@ public class GameClient extends Application {
         gc.fillText(String.format("GEAR: %d (%s)", myCar.currentGear, myCar.isAutomatic ? "AUTO" : "MANUAL"), 20, 130);
         gc.fillText(String.format("%.0f KPH", myCar.getKPH()), 20, 170);
 
-        // DRS Indicator
-        if (inputHandler.getCurrentInput().drsActive) {
-            gc.setFill(Color.LIME);
-            gc.setFont(Font.font("Arial Black", 40));
-            gc.fillText("DRS ACTIVE", 20, 230);
-        } else {
-            gc.setFill(Color.web("#333"));
-            gc.setFont(Font.font("Arial Black", 40));
-            gc.fillText("DRS", 20, 230);
-        }
     }
 
     private void renderVictory(GraphicsContext gc) {
@@ -711,6 +707,10 @@ public class GameClient extends Application {
         myCar.x = newPos.x;
         myCar.y = newPos.y;
         myCar.updateAutomaticGears();
+        
+        // DRS Zone Logic: Only allow DRS if in the zone
+        boolean inZone = raceTrack.isInDrsZone(myCar.x, myCar.y);
+        myCar.drsActive = input.drsActive && inZone;
 
         // Collision
         int hitIndex = PhysicsEngine.isColliding(myCar.getBounds(), raceTrack.getWalls());
@@ -825,7 +825,16 @@ class TrackRenderer {
         gc.strokeRoundRect(960 - 850, 540 - 450, 1700, 900, 900, 900);
         gc.setLineDashes(null);
 
-        // 5. Draw Checkered Start/Finish Line (Bottom)
+        // 5. Draw DRS Zone
+        Rectangle drs = track.getDrsZone();
+        gc.setStroke(Color.web("#00ff00", 0.3)); // Translucent neon green
+        gc.setLineWidth(10);
+        gc.strokeRect(drs.getX(), drs.getY(), drs.getWidth(), drs.getHeight());
+        gc.setFill(Color.web("#00ff00", 0.5));
+        gc.setFont(Font.font("Arial Black", 40));
+        gc.fillText("DRS ZONE", drs.getX() + 250, drs.getY() + 65);
+
+        // 6. Draw Checkered Start/Finish Line (Bottom)
         double startX = 960;
         double topY = 940;
         double bottomY = 1040;
