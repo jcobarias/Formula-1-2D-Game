@@ -1,5 +1,7 @@
+
 import java.util.List;
 import javafx.scene.shape.Shape;
+import javafx.scene.image.Image;
 
 // Utility class for physics calculations
 public class PhysicsEngine {
@@ -74,6 +76,8 @@ class Car {
     public boolean isOffTrack = false;
     public javafx.scene.paint.Color color = javafx.scene.paint.Color.RED;
     public javafx.scene.paint.Color accentColor = javafx.scene.paint.Color.WHITE;
+    
+    public Image sprite;
 
     // Race Progress
     public int lapCount = 0;

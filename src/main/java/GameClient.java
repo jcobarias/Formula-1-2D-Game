@@ -17,6 +17,9 @@ import java.util.List;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.Collections;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
+import java.io.InputStream;
 
 enum GameState {
     START_SCREEN, RACING, VICTORY, PAUSED, EXIT_CONFIRM, COUNTDOWN, PODIUM
@@ -36,21 +39,23 @@ class Confetti {
     }
 }
 
-enum F1Team {
-    MERCEDES("Mercedes-AMG", "#A6A6A6", "#00A19B"),
-    FERRARI("Scuderia Ferrari", "#DC0000", "#FEF200"),
-    RED_BULL("Red Bull Racing", "#0600EF", "#DC0000"),
-    MCLAREN("McLaren F1", "#FF8700", "#47C7FC"),
-    ALPINE("Alpine F1", "#0090FF", "#E10600");
+  enum F1Team {
+    MERCEDES("Mercedes-AMG", "#A6A6A6", "#00A19B", "/assets/mercedes.png"),
+    FERRARI("Scuderia Ferrari", "#DC0000", "#FEF200", "/assets/ferrari.png"),
+    RED_BULL("Red Bull Racing", "#0600EF", "#DC0000", "/assets/redbull.png"),
+    MCLAREN("McLaren F1", "#FF8700", "#47C7FC", "/assets/mclaren.png"),
+    ALPINE("Alpine F1", "#0090FF", "#E10600", "/assets/alpine.png");
 
     public final String fullName;
     public final String primary;
     public final String accent;
+    public final String spritePath;
 
-    F1Team(String fullName, String primary, String accent) {
+    F1Team(String fullName, String primary, String accent, String spritePath) {
         this.fullName = fullName;
         this.primary = primary;
         this.accent = accent;
+        this.spritePath = spritePath;
     }
 }
 
@@ -113,11 +118,6 @@ public class GameClient extends Application {
 
             if (currentState == GameState.START_SCREEN) {
                 handleStartMenuKey(e.getCode());
-                return;
-            }
-
-            if (currentState == GameState.PAUSED) {
-                handlePauseMenuKey(e.getCode());
                 return;
             }
 
@@ -254,9 +254,13 @@ public class GameClient extends Application {
             card.setStyle("-fx-border-color: white; -fx-border-width: 2; -fx-background-color: #222;");
             card.setPrefWidth(280);
 
-            Rectangle preview = new Rectangle(150, 80, Color.web(team.primary));
-            preview.setStroke(Color.web(team.accent));
-            preview.setStrokeWidth(4);
+            ImageView preview = new ImageView(
+                new Image(getClass().getResourceAsStream(team.spritePath))
+            );
+
+            preview.setFitWidth(150);
+            preview.setFitHeight(80);
+            preview.setPreserveRatio(true);
 
             Text name = new Text(team.fullName);
             name.setFont(Font.font("Arial Bold", 18));
@@ -558,6 +562,17 @@ public class GameClient extends Application {
         myCar.velocity = 0;
         myCar.color = Color.web(team.primary);
         myCar.accentColor = Color.web(team.accent); // Assuming we add this field to Car
+
+        // Added Code for Sprite
+        myCar.sprite = new Image(
+          getClass().getResourceAsStream(team.spritePath)  
+        );
+
+        InputStream stream = getClass().getResourceAsStream(team.spritePath);
+        if (stream != null) {
+            myCar.sprite = new Image(stream);
+        }
+
         myCar.lapCount = 0;
         myCar.nextCheckpoint = 1;
 
@@ -851,25 +866,24 @@ class TrackRenderer {
 
     public void drawCars(GraphicsContext gc, List<Car> allCars) {
         for (Car car : allCars) {
-            gc.save();
-            gc.translate(car.x, car.y);
-            gc.rotate(car.angle);
 
-            // Draw the car body
-            gc.setFill(car.color);
-            gc.fillRect(-15, -10, 30, 20);
+        gc.save();
 
-            // Draw Team Livery Stripe
-            gc.setFill(car.accentColor);
-            gc.fillRect(-5, -10, 10, 20); // Center stripe
+        gc.translate(car.x, car.y);
 
-            // Nose/Front Wing
-            gc.setFill(Color.BLACK);
-            gc.fillRect(10, -8, 8, 16);
-            gc.setFill(car.accentColor);
-            gc.fillRect(14, -8, 4, 16); // Front wing detail
+        // rotate sprite
+        gc.rotate(car.angle);
 
-            gc.restore();
-        }
+        // draw PNG sprite
+        gc.drawImage(
+                car.sprite,
+                -40,
+                -20,
+                80,
+                40
+        );
+
+        gc.restore();
     }
+  }
 }
