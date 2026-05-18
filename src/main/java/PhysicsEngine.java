@@ -1,7 +1,5 @@
-
 import java.util.List;
 import javafx.scene.shape.Shape;
-import javafx.scene.image.Image;
 
 // Utility class for physics calculations
 public class PhysicsEngine {
@@ -32,7 +30,7 @@ public class PhysicsEngine {
         }
 
         // 3. Time-Dependent Friction (Reduced if DRS is active)
-        double frictionFactor = car.isOffTrack ? 4.0 : (input.drsActive ? 0.05 : 0.2); 
+        double frictionFactor = car.isOffTrack ? 4.0 : (car.drsActive ? 0.05 : 0.2); 
         car.velocity -= car.velocity * frictionFactor * deltaTime;
         if (car.velocity < 0) car.velocity = 0;
 
@@ -76,8 +74,11 @@ class Car {
     public boolean isOffTrack = false;
     public javafx.scene.paint.Color color = javafx.scene.paint.Color.RED;
     public javafx.scene.paint.Color accentColor = javafx.scene.paint.Color.WHITE;
-    
-    public Image sprite;
+
+    // Networking Interpolation
+    public double targetX, targetY, targetAngle;
+    public long lastSequenceNumber = -1;
+    public int teamOrdinal = -1;
 
     // Race Progress
     public int lapCount = 0;

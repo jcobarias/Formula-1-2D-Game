@@ -1,28 +1,143 @@
-import java.util.List;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+import java.net.InetAddress;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
-// Main server class
+/**
+ * GridRush F1 - Game Server
+ * Handles real-time movement synchronization using UDP.
+ */
 public class GameServer {
-    public void listen() {
-        // TODO: Accept new player connections and assign playerIDs
+    private static final int PORT = 9876;
+    private DatagramSocket socket;
+
+    // Maps PlayerID to their network address for broadcasting
+    private ConcurrentHashMap<Integer, ClientInfo> clients = new ConcurrentHashMap<>();
+
+    public void start() {
+        try {
+            socket = new DatagramSocket(PORT);
+            System.out.println("🏁 GridRush Server started on port " + PORT);
+            System.out.println("Listening for incoming drivers...");
+
+            byte[] buffer = new byte[1024];
+            while (true) {
+                DatagramPacket incoming = new DatagramPacket(buffer, buffer.length);
+                socket.receive(incoming);
+
+                handlePacket(incoming);
+            }
+        } catch (Exception e) {
+            System.err.println("Server Error: " + e.getMessage());
+            e.printStackTrace();
+        } finally {
+            if (socket != null && !socket.isClosed()) {
+                socket.close();
+            }
+        }
     }
-    public void broadcastState() {
-        // TODO: Send CarState of all players to clients
+
+    private int requiredPlayers = -1; // Dynamic based on first client
+    private boolean raceStarted = false;
+
+    private void handlePacket(DatagramPacket packet) {
+        try {
+            CarState state = CarState.deserialize(packet.getData(), packet.getOffset(), packet.getLength());
+            int playerID = state.playerID;
+
+            // Register/Update client address
+            if (!clients.containsKey(playerID)) {
+                clients.put(playerID, new ClientInfo(packet.getAddress(), packet.getPort()));
+                System.out.println("🏎️ New Driver Joined: ID " + playerID + " (Port: " + packet.getPort() + ")");
+
+                // Set server capacity based on first player's choice
+                if (requiredPlayers == -1 && state.requiredPlayers > 0) {
+                    requiredPlayers = state.requiredPlayers;
+                    System.out.println("🔧 Server capacity set to: " + requiredPlayers + " players.");
+                }
+            }
+
+            // Track team choice
+            ClientInfo client = clients.get(playerID);
+            if (client.teamOrdinal != state.teamOrdinal) {
+                client.teamOrdinal = state.teamOrdinal;
+                if (state.teamOrdinal != -1) {
+                    System.out.println("✅ Driver " + playerID + " selected team ordinal: " + state.teamOrdinal);
+                }
+            }
+
+            // Check if everyone is ready (joined AND picked team)
+            if (requiredPlayers != -1 && clients.size() >= requiredPlayers && !raceStarted) {
+                int readyCount = 0;
+                for (ClientInfo c : clients.values()) {
+                    if (c.teamOrdinal != -1)
+                        readyCount++;
+                }
+
+                if (readyCount >= requiredPlayers) {
+                    raceStarted = true;
+                    System.out.println("🏁 All " + requiredPlayers + " drivers ready! Broadcasting START signal.");
+
+                    CarState startSignal = new CarState();
+                    startSignal.playerID = -999;
+                    startSignal.isRaceStarted = true;
+                    startSignal.requiredPlayers = requiredPlayers;
+                    byte[] startData = startSignal.serialize();
+
+                    // Broadcast multiple times for reliability
+                    for (int i = 0; i < 3; i++) {
+                        broadcastState(startData, startData.length, -1);
+                    }
+                } else {
+                    // Periodic status log every 3 seconds
+                    if (System.currentTimeMillis() % 3000 < 50) {
+                        System.out.println(String.format("⏳ Lobby Status: [%d/%d Connected] | [%d/%d Ready]", 
+                            clients.size(), requiredPlayers, readyCount, requiredPlayers));
+                    }
+                }
+            }
+
+            // Relay this state to all other drivers
+            broadcastState(packet.getData(), packet.getLength(), playerID);
+
+        } catch (Exception e) {
+            System.err.println("⚠️ Packet Error from " + packet.getAddress() + ": " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    private void broadcastState(byte[] data, int length, int senderID) {
+        for (Map.Entry<Integer, ClientInfo> entry : clients.entrySet()) {
+            if (!entry.getKey().equals(senderID)) {
+                ClientInfo info = entry.getValue();
+                try {
+                    DatagramPacket relay = new DatagramPacket(data, length, info.address, info.port);
+                    socket.send(relay);
+                } catch (Exception e) {
+                    clients.remove(entry.getKey());
+                    if (clients.isEmpty()) {
+                        System.out.println("♻️ Lobby empty. Resetting server state...");
+                        raceStarted = false;
+                        requiredPlayers = -1;
+                    }
+                }
+            }
+        }
+    }
+
+    private static class ClientInfo {
+        InetAddress address;
+        int port;
+        int teamOrdinal = -1;
+
+        ClientInfo(InetAddress address, int port) {
+            this.address = address;
+            this.port = port;
+        }
+    }
+
+    public static void main(String[] args) {
+        new GameServer().start();
     }
 }
-
-// Manages race logic and player progress
-class RaceManager {
-    public void updateRaceLogic() {
-        // TODO: Server-side game loop
-    }
-    public void checkLapProgress(Player p) {
-        // TODO: Check and update lap/checkpoint progress
-    }
-    public List<Player> getRankings() {
-        // TODO: Sort players by lap and checkpoint
-        return null;
-    }
-}
-
-// Placeholder for Player class
-class Player {}

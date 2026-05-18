@@ -5,8 +5,7 @@ import java.util.List;
 public class RaceTrack {
     private List<Shape> walls = new ArrayList<>();
     private List<Shape> checkpoints = new ArrayList<>();
-    private Path outerPath;
-    private Path innerPath;
+    private Rectangle drsZone;
 
     public RaceTrack() {
         // Track Stadium Shape (Rounded Rectangles)
@@ -32,6 +31,9 @@ public class RaceTrack {
         checkpoints.add(new Rectangle(1760, 490, 100, 10)); // 1: Right Side
         checkpoints.add(new Rectangle(960, 40, 10, 100)); // 2: Top Side
         checkpoints.add(new Rectangle(60, 490, 100, 10)); // 3: Left Side
+        
+        // Define DRS Zone (Top Backstraight)
+        drsZone = new Rectangle(960 - 400, 40, 800, 100);
     }
 
     public List<Shape> getWalls() {
@@ -40,6 +42,14 @@ public class RaceTrack {
 
     public List<Shape> getCheckpoints() {
         return checkpoints;
+    }
+
+    public Rectangle getDrsZone() {
+        return drsZone;
+    }
+
+    public boolean isInDrsZone(double x, double y) {
+        return drsZone.contains(x, y);
     }
 
     public boolean isOutside(double x, double y) {
