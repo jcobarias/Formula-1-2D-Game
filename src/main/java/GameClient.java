@@ -1120,6 +1120,31 @@ public class GameClient extends Application {
     }
 
     private void startMultiplayer(int players) {
+        javafx.scene.control.TextInputDialog dialog = new javafx.scene.control.TextInputDialog("localhost");
+        dialog.setTitle("Connect to GridRush F1 Server");
+        dialog.setHeaderText("Join Multiplayer Lobby");
+        dialog.setContentText("Enter Server IP Address:");
+        
+        javafx.scene.control.DialogPane dialogPane = dialog.getDialogPane();
+        dialogPane.setStyle("-fx-background-color: #0d0d0d; " +
+                            "-fx-border-color: cyan; " +
+                            "-fx-border-width: 2px; " +
+                            "-fx-text-fill: white;");
+        
+        // Custom styling for standard dialog components to fit neon theme
+        dialogPane.lookup(".label").setStyle("-fx-text-fill: white; -fx-font-family: 'Arial'; -fx-font-size: 14px; -fx-font-weight: bold;");
+        dialogPane.lookup(".content.label").setStyle("-fx-text-fill: cyan; -fx-font-family: 'Arial'; -fx-font-size: 14px;");
+        
+        java.util.Optional<String> result = dialog.showAndWait();
+        if (!result.isPresent()) {
+            return; // User closed dialog, go back to menu
+        }
+        
+        String ip = result.get().trim();
+        if (ip.isEmpty()) {
+            ip = "localhost";
+        }
+
         this.REQUIRED_PLAYERS = players;
         this.isMultiplayer = true;
         this.otherCars.clear();
@@ -1139,7 +1164,7 @@ public class GameClient extends Application {
         modeSelectionUI.setVisible(false);
         stagingUI.setVisible(true);
         updateChatUIForCurrentState();
-        connectToServer("localhost", 9876); // Connect to lobby
+        connectToServer(ip, 9876); // Connect to lobby
     }
 
     private void handleStartMenuKey(KeyCode code) {
