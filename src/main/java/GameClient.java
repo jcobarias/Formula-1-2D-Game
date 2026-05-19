@@ -1646,11 +1646,11 @@ class TrackRenderer {
 
         // 5. Draw DRS Zone
         Rectangle drs = track.getDrsZone();
-        gc.setStroke(Color.web("#00ff00", 0.3)); // Translucent neon green
+        gc.setStroke(Color.web("#00ff00", 0.5)); // Translucent neon green
         gc.setLineWidth(10);
         gc.strokeRect(drs.getX(), drs.getY(), drs.getWidth(), drs.getHeight());
         gc.setFill(Color.web("#00ff00", 0.5));
-        gc.setFont(Font.font("Arial Black", 40));
+        gc.setFont(Font.font("Formula1 Display Bold", 40));
         gc.fillText("DRS ZONE", drs.getX() + 250, drs.getY() + 65);
 
         // 6. Draw Checkered Start/Finish Line (Bottom)
