@@ -32,6 +32,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import javafx.scene.paint.LinearGradient;
 import javafx.scene.paint.Stop;
 import javafx.scene.paint.CycleMethod;
+import java.io.InputStream;
 
 
 enum GameState {
@@ -388,6 +389,8 @@ public class GameClient extends Application {
 
     private StackPane createModeSelectionUI() {
     StackPane rootContainer = new StackPane();
+    InputStream fontStream = getClass().getResourceAsStream("/fonts/Formula1-Bold_web_0.ttf");
+    Font f1Font = Font.loadFont(fontStream, 20);
 
     // 1. Checkerboard Background (Using your 80px tile setting)
     Pane checkerBackground = new Pane();
@@ -427,8 +430,8 @@ public class GameClient extends Application {
 
     // Neon blue outline behind the main text
     Text titleShadow = new Text("GRIDRUSH F1");
-    titleShadow.setFont(Font.font("Impact", FontWeight.BOLD, 120)); // Swapped to aggressive arcade Impact font
-    titleShadow.setRotate(-5); // Slanted like a real racing logo
+    titleShadow.setFont(Font.font("Formula1 Display Bold", 175)); // Swapped to aggressive arcade Impact font
+    // titleShadow.setRotate(-5); // Slanted like a real racing logo
     titleShadow.setFill(Color.TRANSPARENT);
     titleShadow.setStroke(Color.web("#00ffff")); // Cyan neon stroke
     titleShadow.setStrokeWidth(5);
@@ -438,8 +441,8 @@ public class GameClient extends Application {
 
     // Main text with an orange-to-yellow fire gradient
     Text titleFront = new Text("GRIDRUSH F1");
-    titleFront.setFont(Font.font("Impact", FontWeight.BOLD, 120));
-    titleFront.setRotate(-5);
+    titleFront.setFont(Font.font("Formula1 Display Bold", 175));
+    // titleFront.setRotate(-5);
     
     LinearGradient fireGradient = new LinearGradient(0, 0, 0, 1, true, CycleMethod.NO_CYCLE,
         new Stop(0.0, Color.web("#fff200")), // Bright Yellow
@@ -458,7 +461,7 @@ public class GameClient extends Application {
     titleStack.getChildren().addAll(titleShadow, titleFront);
 
     Text subtitle = new Text("SELECT GAME MODE");
-    subtitle.setFont(Font.font("Arial Black", 26)); // Weightier subhead font
+    subtitle.setFont(Font.font("Formula1 Display Bold", 26)); // Weightier subhead font
     subtitle.setFill(Color.WHITE);
     subtitle.setEffect(new javafx.scene.effect.DropShadow(5, Color.BLACK));
 
@@ -624,14 +627,14 @@ public class GameClient extends Application {
         menu.setStyle("-fx-background-color: rgba(0,0,0,0.8);");
         menu.setVisible(false); // Changed to false: hide until mode is selected
 
-        Text title = new Text("GRIDRUSH F1");
-        title.setFont(Font.font("Arial Black", 120));
-        title.setFill(Color.WHITE);
-        title.setStroke(Color.CYAN);
-        title.setStrokeWidth(2);
+        // Text title = new Text("GRIDRUSH F1");
+        // title.setFont(Font.font("Arial Black", 120));
+        // title.setFill(Color.WHITE);
+        // title.setStroke(Color.CYAN);
+        // title.setStrokeWidth(2);
 
         Text sub = new Text("SELECT YOUR MACHINE");
-        sub.setFont(Font.font("Arial", 30));
+        sub.setFont(Font.font("Formula1 Display Bold", 30));
         sub.setFill(Color.LIGHTGRAY);
 
         HBox carBox = new HBox(20);
@@ -694,7 +697,7 @@ public class GameClient extends Application {
         }
         updateMenuHighlighting();
 
-        menu.getChildren().addAll(title, sub, carBox);
+        menu.getChildren().addAll(sub, carBox);
 
         // Add dedicated Back to Menu and Exit Buttons in an HBox at the bottom
         HBox bottomButtons = new HBox(30);
