@@ -133,6 +133,8 @@ public class GameClient extends Application {
     private double cameraY = 0;
     private double orbitAngle = 0;
     private List<Confetti> confetti = new ArrayList<>();
+    private List<String> finishRankings = java.util.Collections.synchronizedList(new ArrayList<>());
+    private Set<Integer> finishedPlayers = java.util.Collections.synchronizedSet(new java.util.LinkedHashSet<>());
 
     // Menu Navigation
     private int menuIndex = 0;
@@ -1232,6 +1234,12 @@ public class GameClient extends Application {
         title.setFill(Color.GOLD);
         title.setEffect(new javafx.scene.effect.DropShadow(20, Color.GOLD));
 
+        VBox rankingsVBox = new VBox(15);
+        rankingsVBox.setAlignment(Pos.CENTER);
+        rankingsVBox.setStyle("-fx-background-color: rgba(20, 20, 20, 0.85); -fx-padding: 20; -fx-background-radius: 12; -fx-border-color: gold; -fx-border-width: 1.5;");
+        rankingsVBox.setPrefWidth(600);
+        rankingsVBox.setMaxWidth(600);
+
         Button replayBtn = new Button("REPLAY");
         replayBtn.setText(String.format("REPLAY (PB: %.2fs)", bestLapTime));
         styleMenuButton(replayBtn);
@@ -1255,7 +1263,7 @@ public class GameClient extends Application {
         exitBtn.setOnAction(e -> showExitConfirm());
         victoryButtons.add(exitBtn);
 
-        overlay.getChildren().addAll(title, replayBtn, menuBtn, exitBtn);
+        overlay.getChildren().addAll(title, rankingsVBox, replayBtn, menuBtn, exitBtn);
         return overlay;
     }
 
@@ -1263,6 +1271,39 @@ public class GameClient extends Application {
         if (!victoryScreenUI.isVisible()) {
             victoryScreenUI.setVisible(true);
             menuIndex = 0;
+
+            // Rebuild the rankings list dynamically
+            VBox rankingsVBox = (VBox) victoryScreenUI.getChildren().get(1);
+            rankingsVBox.getChildren().clear();
+
+            Text rankingTitle = new Text("🏆 FINAL STANDINGS 🏆");
+            rankingTitle.setFont(Font.font("Arial Black", 28));
+            rankingTitle.setFill(Color.GOLD);
+            rankingsVBox.getChildren().add(rankingTitle);
+
+            // Access in a thread-safe synchronized manner
+            synchronized (finishRankings) {
+                for (int i = 0; i < finishRankings.size(); i++) {
+                    Text rankText = new Text();
+                    rankText.setFont(Font.font("Arial Bold", 22));
+                    String content = finishRankings.get(i);
+                    if (i == 0) {
+                        rankText.setFill(Color.GOLD); // Winner gets gold!
+                        rankText.setText("🥇 1st: " + content);
+                    } else if (i == 1) {
+                        rankText.setFill(Color.SILVER);
+                        rankText.setText("🥈 2nd: " + content);
+                    } else if (i == 2) {
+                        rankText.setFill(Color.BROWN);
+                        rankText.setText("🥉 3rd: " + content);
+                    } else {
+                        rankText.setFill(Color.WHITE);
+                        rankText.setText("🏎️ " + (i + 1) + "th: " + content);
+                    }
+                    rankingsVBox.getChildren().add(rankText);
+                }
+            }
+
             // Update the Replay button text with the latest record
             victoryButtons.get(0).setText(String.format("REPLAY (BEST: %.2fs)", bestLapTime));
             updateMenuHighlighting();
@@ -1576,6 +1617,8 @@ public class GameClient extends Application {
         lastLapTime = 0;
         // bestLapTime = 0; // KEEP this for the session
         menuIndex = 0;
+        finishRankings.clear();
+        finishedPlayers.clear();
 
         if (startScreenUI != null)
             startScreenUI.setVisible(true);
@@ -1662,6 +1705,16 @@ public class GameClient extends Application {
                             remoteCar.targetY = state.y;
                             remoteCar.targetAngle = state.angle;
                             remoteCar.velocity = state.velocity;
+
+                            if (state.currentLap >= TOTAL_LAPS) {
+                                if (!finishedPlayers.contains(state.playerID)) {
+                                    finishedPlayers.add(state.playerID);
+                                    String teamName = (state.teamOrdinal >= 0 && state.teamOrdinal < F1Team.values().length)
+                                        ? F1Team.values()[state.teamOrdinal].fullName
+                                        : "Unknown Team";
+                                    finishRankings.add("DRIVER " + state.playerID + " (" + teamName + ") - Time: " + String.format("%.2f", gameTime) + "s");
+                                }
+                            }
 
                             if (remoteCar.teamOrdinal != state.teamOrdinal) {
                                 remoteCar.teamOrdinal = state.teamOrdinal; // Sync team choice
@@ -1816,6 +1869,10 @@ public class GameClient extends Application {
                         bestLapTime = lastLapTime;
                     currentLapTime = 0;
                     if (myCar.lapCount >= TOTAL_LAPS) {
+                        if (!finishedPlayers.contains(playerID)) {
+                            finishedPlayers.add(playerID);
+                            finishRankings.add("YOU (" + selectedTeam.fullName + ") - Time: " + String.format("%.2f", gameTime) + "s");
+                        }
                         currentState = GameState.PODIUM;
                         countdownTime = 0;
                         spawnConfetti();
