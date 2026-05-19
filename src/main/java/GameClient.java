@@ -16,20 +16,10 @@ import javafx.beans.binding.Bindings;
 import javafx.scene.transform.Scale;
 import javafx.scene.Group;
 
-//for UI changes
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
-import java.io.InputStream;
 import java.util.HashMap;
-
-//for sprite changes
-import javafx.scene.image.Image;
-import javafx.scene.image.ImageView;
 import javafx.scene.effect.DropShadow;
-import javafx.scene.effect.Glow;
-import javafx.animation.ScaleTransition;
-import javafx.util.Duration;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.HashSet;
@@ -410,7 +400,6 @@ public class GameClient extends Application {
         Button multiPlayer2Btn = createMenuButton("MULTIPLAYER (2 PLAYERS)");
         Button multiPlayer4Btn = createMenuButton("MULTIPLAYER (4 PLAYERS)");
 
-        // Car selection area at the bottom
         HBox carsBox = new HBox(30); // spacing between cars
         carsBox.setAlignment(Pos.CENTER);
         carsBox.setPadding(new Insets(20, 10, 20, 10));
@@ -427,7 +416,6 @@ public class GameClient extends Application {
             iv.setUserData(team); // store team info for later use
             carsBox.getChildren().add(iv);
         }
-
         singlePlayerBtn.setOnAction(e -> startSinglePlayer());
         multiPlayer2Btn.setOnAction(e -> startMultiplayer(2));
         multiPlayer4Btn.setOnAction(e -> startMultiplayer(4));
@@ -453,7 +441,7 @@ public class GameClient extends Application {
         menu.setVisible(false);
 
         Text title = new Text("F1 MULTIPLAYER LOBBY");
-        title.setFont(Font.font("Verdana", FontWeight.BOLD, 100));
+        title.setFont(Font.font("Arial Black", 60));
         title.setFill(Color.CYAN);
         title.setEffect(new javafx.scene.effect.Glow(0.5));
 
@@ -513,7 +501,7 @@ public class GameClient extends Application {
     private VBox createStartScreenUI() {
         VBox menu = new VBox(40);
         menu.setAlignment(Pos.CENTER);
-        menu.setStyle("-fx-background-color: rgba(0, 0, 0, 0.8);");
+        menu.setStyle("-fx-background-color: rgba(0,0,0,0.8);");
         menu.setVisible(false); // Changed to false: hide until mode is selected
 
         Text title = new Text("GRIDRUSH F1");
