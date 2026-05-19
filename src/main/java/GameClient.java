@@ -29,6 +29,10 @@ import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.util.concurrent.ConcurrentHashMap;
+import javafx.scene.paint.LinearGradient;
+import javafx.scene.paint.Stop;
+import javafx.scene.paint.CycleMethod;
+
 
 enum GameState {
     MODE_SELECTION, STAGING, START_SCREEN, READY_WAIT, RACING, VICTORY, PAUSED, EXIT_CONFIRM, COUNTDOWN, PODIUM
@@ -99,7 +103,7 @@ public class GameClient extends Application {
     private double bestLapTime = 0;
     private GameState previousState = GameState.MODE_SELECTION;
 
-    private VBox modeSelectionUI;
+    private StackPane modeSelectionUI;
     private VBox stagingUI;
     private VBox stagingPlayerList;
     private Text stagingStatusText;
@@ -381,47 +385,157 @@ public class GameClient extends Application {
         return slot;
     }
 
-    private VBox createModeSelectionUI() {
-        VBox menu = new VBox(50);
-        menu.setAlignment(Pos.CENTER);
-        menu.setStyle("-fx-background-color: #050505;");
+    private StackPane createModeSelectionUI() {
+    StackPane rootContainer = new StackPane();
 
-        Text title = new Text("GRIDRUSH F1");
-        title.setFont(Font.font("Verdana", FontWeight.BOLD, 100));
-        title.setFill(Color.WHITE);
-        title.setEffect(new javafx.scene.effect.Glow(0.8));
+    // 1. Checkerboard Background (Using your 80px tile setting)
+    Pane checkerBackground = new Pane();
+    int tileSize = 80; 
+    javafx.scene.image.WritableImage checkerImage = new javafx.scene.image.WritableImage(tileSize * 2, tileSize * 2);
+    javafx.scene.image.PixelWriter writer = checkerImage.getPixelWriter();
+    
+    Color color1 = Color.web("#161616"); 
+    Color color2 = Color.color(1.0, 1.0, 1.0); 
 
-        Text subtitle = new Text("SELECT GAME MODE");
-        subtitle.setFont(Font.font("Arial", 30));
-        subtitle.setFill(Color.GRAY);
-
-        Button singlePlayerBtn = createMenuButton("SINGLE PLAYER");
-        Button multiPlayer2Btn = createMenuButton("MULTIPLAYER (2 PLAYERS)");
-        Button multiPlayer4Btn = createMenuButton("MULTIPLAYER (4 PLAYERS)");
-
-        HBox carsBox = new HBox(30); // spacing between cars
-        carsBox.setAlignment(Pos.CENTER);
-        carsBox.setPadding(new Insets(20, 10, 20, 10));
-        carsBox.setStyle("-fx-background-color: transparent;");
-
-        // Load images for each team
-        for (F1Team team : F1Team.values()) {
-            Image img = new Image(getClass().getResourceAsStream(team.spritePath));
-            ImageView iv = new ImageView(img);
-            iv.setFitWidth(300);
-            iv.setFitHeight(150);
-            iv.setPreserveRatio(true);
-            // Optional: add border or effect for selection highlight
-            iv.setUserData(team); // store team info for later use
-            carsBox.getChildren().add(iv);
+    for (int y = 0; y < tileSize * 2; y++) {
+        for (int x = 0; x < tileSize * 2; x++) {
+            boolean isTile1 = (x < tileSize && y < tileSize) || (x >= tileSize && y >= tileSize);
+            writer.setColor(x, y, isTile1 ? color1 : color2);
         }
-        singlePlayerBtn.setOnAction(e -> startSinglePlayer());
-        multiPlayer2Btn.setOnAction(e -> startMultiplayer(2));
-        multiPlayer4Btn.setOnAction(e -> startMultiplayer(4));
-
-        menu.getChildren().addAll(title, subtitle, singlePlayerBtn, multiPlayer2Btn, multiPlayer4Btn);
-        return menu;
     }
+
+    checkerBackground.setBackground(new Background(new BackgroundImage(
+            checkerImage,
+            BackgroundRepeat.REPEAT, 
+            BackgroundRepeat.REPEAT, 
+            BackgroundPosition.DEFAULT, 
+            BackgroundSize.DEFAULT
+    )));
+    
+    Pane overlay = new Pane();
+    overlay.setStyle("-fx-background-color: rgba(5, 5, 5, 0.70);"); // Slightly darkened for better button contrast
+
+    // 2. Main layout container
+    VBox menu = new VBox(40); // Adjusted spacing dynamically
+    menu.setAlignment(Pos.CENTER);
+    menu.setStyle("-fx-background-color: transparent;");
+
+    // 3. EYE-CATCHING ARCADE TITLE (Double-Layered Neon & Fire Effect)
+    StackPane titleStack = new StackPane();
+    titleStack.setAlignment(Pos.CENTER);
+
+    // Neon blue outline behind the main text
+    Text titleShadow = new Text("GRIDRUSH F1");
+    titleShadow.setFont(Font.font("Impact", FontWeight.BOLD, 120)); // Swapped to aggressive arcade Impact font
+    titleShadow.setRotate(-5); // Slanted like a real racing logo
+    titleShadow.setFill(Color.TRANSPARENT);
+    titleShadow.setStroke(Color.web("#00ffff")); // Cyan neon stroke
+    titleShadow.setStrokeWidth(5);
+    titleShadow.setTranslateY(6);
+    titleShadow.setTranslateX(-6);
+    titleShadow.setEffect(new javafx.scene.effect.Glow(0.8));
+
+    // Main text with an orange-to-yellow fire gradient
+    Text titleFront = new Text("GRIDRUSH F1");
+    titleFront.setFont(Font.font("Impact", FontWeight.BOLD, 120));
+    titleFront.setRotate(-5);
+    
+    LinearGradient fireGradient = new LinearGradient(0, 0, 0, 1, true, CycleMethod.NO_CYCLE,
+        new Stop(0.0, Color.web("#fff200")), // Bright Yellow
+        new Stop(0.6, Color.web("#ff6600")), // Hot Orange
+        new Stop(1.0, Color.web("#cc0000"))  // Deep Red
+    );
+    titleFront.setFill(fireGradient);
+
+    // Give the front text a fiery outer aura glow
+    javafx.scene.effect.DropShadow fireGlow = new javafx.scene.effect.DropShadow();
+    fireGlow.setColor(Color.web("#ff3300"));
+    fireGlow.setRadius(20);
+    fireGlow.setSpread(0.3);
+    titleFront.setEffect(fireGlow);
+
+    titleStack.getChildren().addAll(titleShadow, titleFront);
+
+    Text subtitle = new Text("SELECT GAME MODE");
+    subtitle.setFont(Font.font("Arial Black", 26)); // Weightier subhead font
+    subtitle.setFill(Color.WHITE);
+    subtitle.setEffect(new javafx.scene.effect.DropShadow(5, Color.BLACK));
+
+    Button singlePlayerBtn = createMenuButton("SINGLE PLAYER");
+    Button multiPlayer2Btn = createMenuButton("MULTIPLAYER (2 PLAYERS)");
+    Button multiPlayer4Btn = createMenuButton("MULTIPLAYER (4 PLAYERS)");
+
+    // Ensure buttons are wide enough so they never clip text (...)
+    for (Button btn : new java.util.ArrayList<Button>(java.util.Arrays.asList(singlePlayerBtn, multiPlayer2Btn, multiPlayer4Btn))) {
+        btn.setMinWidth(460);
+        btn.setMinHeight(55);
+    }
+
+    // 4. CAR SHOWROOM WITH DYNAMIC HOVER EFFECTS
+    HBox carsBox = new HBox(35); 
+    carsBox.setAlignment(Pos.CENTER);
+    carsBox.setPadding(new Insets(30, 10, 20, 10));
+    carsBox.setStyle("-fx-background-color: transparent;");
+
+    for (F1Team team : F1Team.values()) {
+        Image img = new Image(getClass().getResourceAsStream(team.spritePath));
+        ImageView iv = new ImageView(img);
+        iv.setFitWidth(260); // Sized slightly down to leave room for the scaling hover effect
+        iv.setFitHeight(130);
+        iv.setPreserveRatio(true);
+        DropShadow outline = new DropShadow();
+        outline.setColor(Color.WHITE);
+        outline.setRadius(20);
+        iv.setEffect(outline);
+        
+        // Wrap the image view in a StackPane container so the scaling/effects remain smooth
+        StackPane carContainer = new StackPane(iv);
+        carContainer.setPadding(new Insets(10));
+        carContainer.setUserData(team); 
+
+        // HOVER ENTER: Pop up (+15% scale) and cast a glowing shadow matching the specific team color!
+        carContainer.setOnMouseEntered(e -> {
+            Color teamColor = Color.web(team.accent); // Pulls the accent hex color dynamically from your enum
+            
+            // Neon shadow glow effect
+            javafx.scene.effect.DropShadow glow = new javafx.scene.effect.DropShadow();
+            glow.setColor(teamColor);
+            glow.setRadius(35);
+            glow.setSpread(0.45);
+            carContainer.setEffect(glow);
+
+            // Hardware accelerated scale up transition
+            javafx.animation.ScaleTransition scaleUp = new javafx.animation.ScaleTransition(javafx.util.Duration.millis(120), carContainer);
+            scaleUp.setToX(1.15);
+            scaleUp.setToY(1.15);
+            scaleUp.play();
+        });
+
+        // HOVER EXIT: Cleanly shrink back down and remove the colorful aura shadow
+        carContainer.setOnMouseExited(e -> {
+            carContainer.setEffect(null);
+
+            javafx.animation.ScaleTransition scaleDown = new javafx.animation.ScaleTransition(javafx.util.Duration.millis(120), carContainer);
+            scaleDown.setToX(1.0);
+            scaleDown.setToY(1.0);
+            scaleDown.play();
+        });
+
+        carsBox.getChildren().add(carContainer);
+    }
+
+    singlePlayerBtn.setOnAction(e -> startSinglePlayer());
+    multiPlayer2Btn.setOnAction(e -> startMultiplayer(2));
+    multiPlayer4Btn.setOnAction(e -> startMultiplayer(4));
+
+    menu.getChildren().addAll(titleStack, subtitle, singlePlayerBtn, multiPlayer2Btn, multiPlayer4Btn, carsBox);
+    
+    // 5. Group layers together safely
+    rootContainer.getChildren().addAll(checkerBackground, overlay, menu);
+    
+    return rootContainer; 
+}
+
 
     private void startSinglePlayer() {
         isMultiplayer = false;
