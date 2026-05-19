@@ -11,6 +11,8 @@ import javafx.scene.input.KeyEvent;
 import javafx.animation.AnimationTimer;
 import javafx.scene.text.*;
 import javafx.scene.control.Button;
+import javafx.scene.control.ScrollPane;
+import javafx.scene.control.TextField;
 import javafx.geometry.*;
 import javafx.beans.binding.Bindings;
 import javafx.scene.transform.Scale;
@@ -32,8 +34,9 @@ import java.util.concurrent.ConcurrentHashMap;
 import javafx.scene.paint.LinearGradient;
 import javafx.scene.paint.Stop;
 import javafx.scene.paint.CycleMethod;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.io.InputStream;
-
 
 enum GameState {
     MODE_SELECTION, STAGING, START_SCREEN, READY_WAIT, RACING, VICTORY, PAUSED, EXIT_CONFIRM, COUNTDOWN, PODIUM
@@ -104,6 +107,15 @@ public class GameClient extends Application {
     private double bestLapTime = 0;
     private GameState previousState = GameState.MODE_SELECTION;
 
+    // Chatbox System variables
+    private ScrollPane chatScrollPane;
+    private VBox chatMessageList;
+    private TextField chatInput;
+    private VBox chatContainer;
+    private long lastChatActivityTime = 0;
+    private boolean chatActive = false;
+
+    private StackPane rootPane;
     private StackPane modeSelectionUI;
     private VBox stagingUI;
     private VBox stagingPlayerList;
@@ -135,6 +147,7 @@ public class GameClient extends Application {
     @Override
     public void start(Stage stage) {
         StackPane root = new StackPane();
+        this.rootPane = root;
         Canvas canvas = new Canvas(1920, 1080);
         GraphicsContext gc = canvas.getGraphicsContext2D();
 
@@ -146,9 +159,12 @@ public class GameClient extends Application {
         this.pauseMenuUI = createPauseMenuUI();
         this.exitConfirmUI = createExitConfirmUI();
         this.victoryScreenUI = createVictoryScreenUI();
+        this.chatContainer = createChatUI();
 
         root.getChildren().addAll(canvas, modeSelectionUI, stagingUI, readyWaitUI, startScreenUI, pauseMenuUI,
-                victoryScreenUI, exitConfirmUI);
+                victoryScreenUI, exitConfirmUI, chatContainer);
+
+        updateChatUIForCurrentState();
 
         // Wrap root in a scalable Group to fit any screen resolution dynamically
         Group scalableGroup = new Group(root);
@@ -166,6 +182,24 @@ public class GameClient extends Application {
         root.getTransforms().add(scale);
 
         scene.setOnKeyPressed(e -> {
+            if (chatActive) {
+                if (e.getCode() == KeyCode.ESCAPE) {
+                    closeChat();
+                }
+                return;
+            }
+
+            if (e.getCode() == KeyCode.T && (currentState == GameState.RACING || currentState == GameState.COUNTDOWN)) {
+                openChat();
+                e.consume();
+                return;
+            }
+
+            if (currentState == GameState.EXIT_CONFIRM) {
+                handleExitConfirmKey(e.getCode());
+                return;
+            }
+
             if (e.getCode() == KeyCode.ESCAPE && currentState != GameState.START_SCREEN) {
                 togglePause();
                 return;
@@ -183,16 +217,6 @@ public class GameClient extends Application {
 
             if (currentState == GameState.PAUSED) {
                 handlePauseMenuKey(e.getCode());
-                return;
-            }
-
-            if (currentState == GameState.PAUSED) {
-                handlePauseMenuKey(e.getCode());
-                return;
-            }
-
-            if (currentState == GameState.EXIT_CONFIRM) {
-                handleExitConfirmKey(e.getCode());
                 return;
             }
 
@@ -215,7 +239,11 @@ public class GameClient extends Application {
                     myCar.currentGear--;
             }
         });
-        scene.setOnKeyReleased(inputHandler::handleKeyReleased);
+        scene.setOnKeyReleased(e -> {
+            if (chatActive)
+                return;
+            inputHandler.handleKeyReleased(e);
+        });
 
         // Game Loop (approx 60 FPS)
         new AnimationTimer() {
@@ -229,6 +257,18 @@ public class GameClient extends Application {
                 }
                 double deltaTime = (now - lastTime) / 1_000_000_000.0;
                 lastTime = now;
+
+                // Chat fade-out logic during race
+                if (chatContainer != null && chatContainer.isVisible() && !chatActive
+                        && (currentState == GameState.RACING || currentState == GameState.COUNTDOWN)) {
+                    long timeSinceLastActivity = System.currentTimeMillis() - lastChatActivityTime;
+                    if (timeSinceLastActivity > 6000) {
+                        double currentOpacity = chatScrollPane.getOpacity();
+                        if (currentOpacity > 0.1) {
+                            chatScrollPane.setOpacity(Math.max(0.1, currentOpacity - deltaTime * 2.0));
+                        }
+                    }
+                }
 
                 // Handle States
                 if (currentState == GameState.MODE_SELECTION) {
@@ -388,160 +428,165 @@ public class GameClient extends Application {
     }
 
     private StackPane createModeSelectionUI() {
-    StackPane rootContainer = new StackPane();
-    InputStream fontStream = getClass().getResourceAsStream("/fonts/Formula1-Bold_web_0.ttf");
-    Font f1Font = Font.loadFont(fontStream, 20);
+        StackPane rootContainer = new StackPane();
+        InputStream fontStream = getClass().getResourceAsStream("/fonts/Formula1-Bold_web_0.ttf");
+        Font f1Font = Font.loadFont(fontStream, 20);
 
-    // 1. Checkerboard Background (Using your 80px tile setting)
-    Pane checkerBackground = new Pane();
-    int tileSize = 80; 
-    javafx.scene.image.WritableImage checkerImage = new javafx.scene.image.WritableImage(tileSize * 2, tileSize * 2);
-    javafx.scene.image.PixelWriter writer = checkerImage.getPixelWriter();
-    
-    Color color1 = Color.web("#161616"); 
-    Color color2 = Color.color(1.0, 1.0, 1.0); 
+        // 1. Checkerboard Background (Using your 80px tile setting)
+        Pane checkerBackground = new Pane();
+        int tileSize = 80;
+        javafx.scene.image.WritableImage checkerImage = new javafx.scene.image.WritableImage(tileSize * 2,
+                tileSize * 2);
+        javafx.scene.image.PixelWriter writer = checkerImage.getPixelWriter();
 
-    for (int y = 0; y < tileSize * 2; y++) {
-        for (int x = 0; x < tileSize * 2; x++) {
-            boolean isTile1 = (x < tileSize && y < tileSize) || (x >= tileSize && y >= tileSize);
-            writer.setColor(x, y, isTile1 ? color1 : color2);
+        Color color1 = Color.web("#161616");
+        Color color2 = Color.color(1.0, 1.0, 1.0);
+
+        for (int y = 0; y < tileSize * 2; y++) {
+            for (int x = 0; x < tileSize * 2; x++) {
+                boolean isTile1 = (x < tileSize && y < tileSize) || (x >= tileSize && y >= tileSize);
+                writer.setColor(x, y, isTile1 ? color1 : color2);
+            }
         }
+
+        checkerBackground.setBackground(new Background(new BackgroundImage(
+                checkerImage,
+                BackgroundRepeat.REPEAT,
+                BackgroundRepeat.REPEAT,
+                BackgroundPosition.DEFAULT,
+                BackgroundSize.DEFAULT)));
+
+        Pane overlay = new Pane();
+        overlay.setStyle("-fx-background-color: rgba(5, 5, 5, 0.70);"); // Slightly darkened for better button contrast
+
+        // 2. Main layout container
+        VBox menu = new VBox(40); // Adjusted spacing dynamically
+        menu.setAlignment(Pos.CENTER);
+        menu.setStyle("-fx-background-color: transparent;");
+
+        // 3. EYE-CATCHING ARCADE TITLE (Double-Layered Neon & Fire Effect)
+        StackPane titleStack = new StackPane();
+        titleStack.setAlignment(Pos.CENTER);
+
+        // Neon blue outline behind the main text
+        Text titleShadow = new Text("GRIDRUSH F1");
+        titleShadow.setFont(Font.font("Formula1 Display Bold", 175)); // Swapped to aggressive arcade Impact font
+        // titleShadow.setRotate(-5); // Slanted like a real racing logo
+        titleShadow.setFill(Color.TRANSPARENT);
+        titleShadow.setStroke(Color.web("#00ffff")); // Cyan neon stroke
+        titleShadow.setStrokeWidth(5);
+        titleShadow.setTranslateY(6);
+        titleShadow.setTranslateX(-6);
+        titleShadow.setEffect(new javafx.scene.effect.Glow(0.8));
+
+        // Main text with an orange-to-yellow fire gradient
+        Text titleFront = new Text("GRIDRUSH F1");
+        titleFront.setFont(Font.font("Formula1 Display Bold", 175));
+        // titleFront.setRotate(-5);
+
+        LinearGradient fireGradient = new LinearGradient(0, 0, 0, 1, true, CycleMethod.NO_CYCLE,
+                new Stop(0.0, Color.web("#fff200")), // Bright Yellow
+                new Stop(0.6, Color.web("#ff6600")), // Hot Orange
+                new Stop(1.0, Color.web("#cc0000")) // Deep Red
+        );
+        titleFront.setFill(fireGradient);
+
+        // Give the front text a fiery outer aura glow
+        javafx.scene.effect.DropShadow fireGlow = new javafx.scene.effect.DropShadow();
+        fireGlow.setColor(Color.web("#ff3300"));
+        fireGlow.setRadius(20);
+        fireGlow.setSpread(0.3);
+        titleFront.setEffect(fireGlow);
+
+        titleStack.getChildren().addAll(titleShadow, titleFront);
+
+        Text subtitle = new Text("SELECT GAME MODE");
+        subtitle.setFont(Font.font("Formula1 Display Bold", 26)); // Weightier subhead font
+        subtitle.setFill(Color.WHITE);
+        subtitle.setEffect(new javafx.scene.effect.DropShadow(5, Color.BLACK));
+
+        Button singlePlayerBtn = createMenuButton("SINGLE PLAYER");
+        Button multiPlayer2Btn = createMenuButton("MULTIPLAYER (2 PLAYERS)");
+        Button multiPlayer4Btn = createMenuButton("MULTIPLAYER (4 PLAYERS)");
+        Button exitBtn = createMenuButton("EXIT GAME");
+
+        // Ensure buttons are wide enough so they never clip text (...)
+        for (Button btn : new java.util.ArrayList<Button>(
+                java.util.Arrays.asList(singlePlayerBtn, multiPlayer2Btn, multiPlayer4Btn, exitBtn))) {
+            btn.setMinWidth(460);
+            btn.setMinHeight(55);
+        }
+
+        // 4. CAR SHOWROOM WITH DYNAMIC HOVER EFFECTS
+        HBox carsBox = new HBox(35);
+        carsBox.setAlignment(Pos.CENTER);
+        carsBox.setPadding(new Insets(30, 10, 20, 10));
+        carsBox.setStyle("-fx-background-color: transparent;");
+
+        for (F1Team team : F1Team.values()) {
+            Image img = new Image(getClass().getResourceAsStream(team.spritePath));
+            ImageView iv = new ImageView(img);
+            iv.setFitWidth(260); // Sized slightly down to leave room for the scaling hover effect
+            iv.setFitHeight(130);
+            iv.setPreserveRatio(true);
+            DropShadow outline = new DropShadow();
+            outline.setColor(Color.WHITE);
+            outline.setRadius(20);
+            iv.setEffect(outline);
+
+            // Wrap the image view in a StackPane container so the scaling/effects remain
+            // smooth
+            StackPane carContainer = new StackPane(iv);
+            carContainer.setPadding(new Insets(10));
+            carContainer.setUserData(team);
+
+            // HOVER ENTER: Pop up (+15% scale) and cast a glowing shadow matching the
+            // specific team color!
+            carContainer.setOnMouseEntered(e -> {
+                Color teamColor = Color.web(team.accent); // Pulls the accent hex color dynamically from your enum
+
+                // Neon shadow glow effect
+                javafx.scene.effect.DropShadow glow = new javafx.scene.effect.DropShadow();
+                glow.setColor(teamColor);
+                glow.setRadius(35);
+                glow.setSpread(0.45);
+                carContainer.setEffect(glow);
+
+                // Hardware accelerated scale up transition
+                javafx.animation.ScaleTransition scaleUp = new javafx.animation.ScaleTransition(
+                        javafx.util.Duration.millis(120), carContainer);
+                scaleUp.setToX(1.15);
+                scaleUp.setToY(1.15);
+                scaleUp.play();
+            });
+
+            // HOVER EXIT: Cleanly shrink back down and remove the colorful aura shadow
+            carContainer.setOnMouseExited(e -> {
+                carContainer.setEffect(null);
+
+                javafx.animation.ScaleTransition scaleDown = new javafx.animation.ScaleTransition(
+                        javafx.util.Duration.millis(120), carContainer);
+                scaleDown.setToX(1.0);
+                scaleDown.setToY(1.0);
+                scaleDown.play();
+            });
+
+            carsBox.getChildren().add(carContainer);
+        }
+
+        singlePlayerBtn.setOnAction(e -> startSinglePlayer());
+        multiPlayer2Btn.setOnAction(e -> startMultiplayer(2));
+        multiPlayer4Btn.setOnAction(e -> startMultiplayer(4));
+        exitBtn.setOnAction(e -> showExitConfirm());
+
+        menu.getChildren().addAll(titleStack, subtitle, singlePlayerBtn, multiPlayer2Btn, multiPlayer4Btn, exitBtn,
+                carsBox);
+
+        // 5. Group layers together safely
+        rootContainer.getChildren().addAll(checkerBackground, overlay, menu);
+
+        return rootContainer;
     }
-
-    checkerBackground.setBackground(new Background(new BackgroundImage(
-            checkerImage,
-            BackgroundRepeat.REPEAT, 
-            BackgroundRepeat.REPEAT, 
-            BackgroundPosition.DEFAULT, 
-            BackgroundSize.DEFAULT
-    )));
-    
-    Pane overlay = new Pane();
-    overlay.setStyle("-fx-background-color: rgba(5, 5, 5, 0.70);"); // Slightly darkened for better button contrast
-
-    // 2. Main layout container
-    VBox menu = new VBox(40); // Adjusted spacing dynamically
-    menu.setAlignment(Pos.CENTER);
-    menu.setStyle("-fx-background-color: transparent;");
-
-    // 3. EYE-CATCHING ARCADE TITLE (Double-Layered Neon & Fire Effect)
-    StackPane titleStack = new StackPane();
-    titleStack.setAlignment(Pos.CENTER);
-
-    // Neon blue outline behind the main text
-    Text titleShadow = new Text("GRIDRUSH F1");
-    titleShadow.setFont(Font.font("Formula1 Display Bold", 175)); // Swapped to aggressive arcade Impact font
-    // titleShadow.setRotate(-5); // Slanted like a real racing logo
-    titleShadow.setFill(Color.TRANSPARENT);
-    titleShadow.setStroke(Color.web("#00ffff")); // Cyan neon stroke
-    titleShadow.setStrokeWidth(5);
-    titleShadow.setTranslateY(6);
-    titleShadow.setTranslateX(-6);
-    titleShadow.setEffect(new javafx.scene.effect.Glow(0.8));
-
-    // Main text with an orange-to-yellow fire gradient
-    Text titleFront = new Text("GRIDRUSH F1");
-    titleFront.setFont(Font.font("Formula1 Display Bold", 175));
-    // titleFront.setRotate(-5);
-    
-    LinearGradient fireGradient = new LinearGradient(0, 0, 0, 1, true, CycleMethod.NO_CYCLE,
-        new Stop(0.0, Color.web("#fff200")), // Bright Yellow
-        new Stop(0.6, Color.web("#ff6600")), // Hot Orange
-        new Stop(1.0, Color.web("#cc0000"))  // Deep Red
-    );
-    titleFront.setFill(fireGradient);
-
-    // Give the front text a fiery outer aura glow
-    javafx.scene.effect.DropShadow fireGlow = new javafx.scene.effect.DropShadow();
-    fireGlow.setColor(Color.web("#ff3300"));
-    fireGlow.setRadius(20);
-    fireGlow.setSpread(0.3);
-    titleFront.setEffect(fireGlow);
-
-    titleStack.getChildren().addAll(titleShadow, titleFront);
-
-    Text subtitle = new Text("SELECT GAME MODE");
-    subtitle.setFont(Font.font("Formula1 Display Bold", 26)); // Weightier subhead font
-    subtitle.setFill(Color.WHITE);
-    subtitle.setEffect(new javafx.scene.effect.DropShadow(5, Color.BLACK));
-
-    Button singlePlayerBtn = createMenuButton("SINGLE PLAYER");
-    Button multiPlayer2Btn = createMenuButton("MULTIPLAYER (2 PLAYERS)");
-    Button multiPlayer4Btn = createMenuButton("MULTIPLAYER (4 PLAYERS)");
-    Button exitBtn = createMenuButton("EXIT GAME");
-
-    // Ensure buttons are wide enough so they never clip text (...)
-    for (Button btn : new java.util.ArrayList<Button>(java.util.Arrays.asList(singlePlayerBtn, multiPlayer2Btn, multiPlayer4Btn, exitBtn))) {
-        btn.setMinWidth(460);
-        btn.setMinHeight(55);
-    }
-
-    // 4. CAR SHOWROOM WITH DYNAMIC HOVER EFFECTS
-    HBox carsBox = new HBox(35); 
-    carsBox.setAlignment(Pos.CENTER);
-    carsBox.setPadding(new Insets(30, 10, 20, 10));
-    carsBox.setStyle("-fx-background-color: transparent;");
-
-    for (F1Team team : F1Team.values()) {
-        Image img = new Image(getClass().getResourceAsStream(team.spritePath));
-        ImageView iv = new ImageView(img);
-        iv.setFitWidth(260); // Sized slightly down to leave room for the scaling hover effect
-        iv.setFitHeight(130);
-        iv.setPreserveRatio(true);
-        DropShadow outline = new DropShadow();
-        outline.setColor(Color.WHITE);
-        outline.setRadius(20);
-        iv.setEffect(outline);
-        
-        // Wrap the image view in a StackPane container so the scaling/effects remain smooth
-        StackPane carContainer = new StackPane(iv);
-        carContainer.setPadding(new Insets(10));
-        carContainer.setUserData(team); 
-
-        // HOVER ENTER: Pop up (+15% scale) and cast a glowing shadow matching the specific team color!
-        carContainer.setOnMouseEntered(e -> {
-            Color teamColor = Color.web(team.accent); // Pulls the accent hex color dynamically from your enum
-            
-            // Neon shadow glow effect
-            javafx.scene.effect.DropShadow glow = new javafx.scene.effect.DropShadow();
-            glow.setColor(teamColor);
-            glow.setRadius(35);
-            glow.setSpread(0.45);
-            carContainer.setEffect(glow);
-
-            // Hardware accelerated scale up transition
-            javafx.animation.ScaleTransition scaleUp = new javafx.animation.ScaleTransition(javafx.util.Duration.millis(120), carContainer);
-            scaleUp.setToX(1.15);
-            scaleUp.setToY(1.15);
-            scaleUp.play();
-        });
-
-        // HOVER EXIT: Cleanly shrink back down and remove the colorful aura shadow
-        carContainer.setOnMouseExited(e -> {
-            carContainer.setEffect(null);
-
-            javafx.animation.ScaleTransition scaleDown = new javafx.animation.ScaleTransition(javafx.util.Duration.millis(120), carContainer);
-            scaleDown.setToX(1.0);
-            scaleDown.setToY(1.0);
-            scaleDown.play();
-        });
-
-        carsBox.getChildren().add(carContainer);
-    }
-
-    singlePlayerBtn.setOnAction(e -> startSinglePlayer());
-    multiPlayer2Btn.setOnAction(e -> startMultiplayer(2));
-    multiPlayer4Btn.setOnAction(e -> startMultiplayer(4));
-    exitBtn.setOnAction(e -> showExitConfirm());
-
-    menu.getChildren().addAll(titleStack, subtitle, singlePlayerBtn, multiPlayer2Btn, multiPlayer4Btn, exitBtn, carsBox);
-    
-    // 5. Group layers together safely
-    rootContainer.getChildren().addAll(checkerBackground, overlay, menu);
-    
-    return rootContainer; 
-}
-
 
     private void startSinglePlayer() {
         isMultiplayer = false;
@@ -720,7 +765,8 @@ public class GameClient extends Application {
     private VBox createReadyWaitUI() {
         VBox menu = new VBox(30);
         menu.setAlignment(Pos.CENTER);
-        menu.setStyle("-fx-background-color: rgba(10, 10, 10, 0.95); -fx-border-color: cyan; -fx-border-width: 3; -fx-padding: 30;");
+        menu.setStyle(
+                "-fx-background-color: rgba(10, 10, 10, 0.95); -fx-border-color: cyan; -fx-border-width: 3; -fx-padding: 30;");
         menu.setMaxSize(800, 450);
         menu.setVisible(false);
 
@@ -771,7 +817,8 @@ public class GameClient extends Application {
         currentState = GameState.MODE_SELECTION;
         menuIndex = 0;
         updateMenuHighlighting();
-        
+        updateChatUIForCurrentState();
+
         System.out.println("🚪 Left multiplayer lobby. Returned to Main Menu.");
     }
 
@@ -786,6 +833,7 @@ public class GameClient extends Application {
         menuIndex = 0;
         myCar.teamOrdinal = -1;
         updateMenuHighlighting();
+        updateChatUIForCurrentState();
         System.out.println("🚪 Returned to Main Menu from car selection.");
     }
 
@@ -816,6 +864,192 @@ public class GameClient extends Application {
         btnBox.getChildren().addAll(yesBtn, noBtn);
         modal.getChildren().addAll(msg, btnBox);
         return modal;
+    }
+
+    private VBox createChatUI() {
+        chatContainer = new VBox(10);
+        chatContainer.setAlignment(Pos.BOTTOM_LEFT);
+        chatContainer.setMaxSize(350, 250);
+        chatContainer.setPadding(new Insets(15));
+
+        chatContainer.setStyle("-fx-background-color: rgba(10, 10, 10, 0.4); " +
+                "-fx-background-radius: 12; -fx-border-radius: 12; " +
+                "-fx-border-color: rgba(255, 255, 255, 0.1); -fx-border-width: 1;");
+        chatContainer.setVisible(false);
+
+        chatMessageList = new VBox(6);
+        chatMessageList.setStyle("-fx-background-color: transparent;");
+
+        chatScrollPane = new ScrollPane(chatMessageList);
+        chatScrollPane.setFitToWidth(true);
+        chatScrollPane.setPrefHeight(200);
+        chatScrollPane.setVbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        chatScrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        chatScrollPane.setStyle(
+                "-fx-background: transparent; -fx-background-color: transparent; -fx-viewport-background-color: transparent; -fx-border-color: transparent;");
+
+        chatInput = new TextField();
+        chatInput.setPromptText("[T] to talk...");
+        chatInput.setStyle("-fx-background-color: rgba(10, 10, 10, 0.4); " +
+                "-fx-text-fill: transparent; -fx-font-size: 16; " +
+                "-fx-border-color: transparent; -fx-background-radius: 6; -fx-border-radius: 6;");
+        chatInput.setDisable(true);
+        chatInput.setEditable(false);
+
+        // Capture ENTER to send message
+        chatInput.setOnAction(e -> {
+            String text = chatInput.getText().trim();
+            if (!text.isEmpty()) {
+                sendChatMessage(text);
+                displayChatMessage(playerID, text);
+            }
+            closeChat();
+        });
+
+        // Focus listener for chat safety
+        chatInput.focusedProperty().addListener((obs, oldVal, newVal) -> {
+            if (newVal) {
+                chatActive = true;
+                if (inputHandler != null) {
+                    inputHandler.clear();
+                }
+            } else if (chatActive) {
+                closeChat();
+            }
+        });
+
+        chatContainer.getChildren().addAll(chatScrollPane, chatInput);
+        return chatContainer;
+    }
+
+    private void displayChatMessage(int senderID, String message) {
+        javafx.application.Platform.runLater(() -> {
+            Text flowText = new Text();
+            flowText.setFont(Font.font("Arial", FontWeight.BOLD, 15));
+
+            String senderTag;
+            if (senderID == playerID) {
+                senderTag = "YOU: ";
+                flowText.setFill(Color.CYAN);
+            } else if (senderID == -999) {
+                senderTag = "[SYSTEM]: ";
+                flowText.setFill(Color.GOLD);
+            } else {
+                senderTag = "DRIVER <" + senderID + ">: ";
+                flowText.setFill(Color.web("#ff007f"));
+            }
+
+            flowText.setText(senderTag + message);
+
+            HBox msgBox = new HBox(flowText);
+            msgBox.setPadding(new Insets(4, 8, 4, 8));
+            msgBox.setStyle("-fx-background-color: rgba(20, 20, 20, 0.6); -fx-background-radius: 6;");
+
+            chatMessageList.getChildren().add(msgBox);
+
+            // Limit message list size to prevent memory leak / overflow
+            if (chatMessageList.getChildren().size() > 50) {
+                chatMessageList.getChildren().remove(0);
+            }
+
+            chatScrollPane.setVvalue(1.0);
+            chatContainer.setOpacity(1.0);
+            chatScrollPane.setOpacity(1.0);
+            lastChatActivityTime = System.currentTimeMillis();
+        });
+    }
+
+    private void sendChatMessage(String message) {
+        if (socket == null)
+            return;
+        try {
+            byte[] msgBytes = message.getBytes(StandardCharsets.UTF_8);
+            ByteBuffer buffer = ByteBuffer.allocate(12 + msgBytes.length);
+            buffer.putInt(1); // Type 1: CHAT_MESSAGE
+            buffer.putInt(playerID);
+            buffer.putInt(msgBytes.length);
+            buffer.put(msgBytes);
+
+            byte[] data = buffer.array();
+            DatagramPacket packet = new DatagramPacket(data, data.length, serverAddress, serverPort);
+            socket.send(packet);
+        } catch (Exception e) {
+            System.err.println("Error sending chat message: " + e.getMessage());
+        }
+    }
+
+    private void openChat() {
+        chatActive = true;
+        inputHandler.clear(); // Clear key presses to stop driving
+        chatInput.setEditable(true);
+        chatInput.setDisable(false);
+        chatInput.requestFocus();
+        chatInput.setStyle(
+                "-fx-background-color: rgba(20, 20, 20, 0.85); -fx-text-fill: white; -fx-font-size: 16; -fx-border-color: cyan; -fx-border-width: 2;");
+        chatContainer.setOpacity(1.0);
+        chatScrollPane.setOpacity(1.0);
+        lastChatActivityTime = System.currentTimeMillis();
+    }
+
+    private void closeChat() {
+        chatActive = false;
+        chatInput.setText("");
+        if (rootPane != null) {
+            rootPane.requestFocus();
+        }
+
+        if (currentState == GameState.RACING || currentState == GameState.COUNTDOWN) {
+            chatInput.setEditable(false);
+            chatInput.setDisable(true);
+            chatInput.setStyle(
+                    "-fx-background-color: rgba(10, 10, 10, 0.4); -fx-text-fill: transparent; -fx-font-size: 16; -fx-border-color: transparent;");
+        } else {
+            // Keep active and clickable in lobby states
+            chatInput.setEditable(true);
+            chatInput.setDisable(false);
+            chatInput.setStyle(
+                    "-fx-background-color: #222; -fx-text-fill: white; -fx-font-size: 16; -fx-border-color: #555;");
+        }
+        lastChatActivityTime = System.currentTimeMillis();
+    }
+
+    private void updateChatUIForCurrentState() {
+        if (chatContainer == null)
+            return;
+
+        if (currentState == GameState.STAGING || currentState == GameState.READY_WAIT) {
+            chatContainer.setVisible(true);
+            chatContainer.setOpacity(1.0);
+            chatScrollPane.setOpacity(1.0);
+            chatContainer.setAlignment(Pos.CENTER_RIGHT);
+            chatContainer.setMaxSize(400, 500);
+            chatContainer.setTranslateX(-50);
+            chatContainer.setTranslateY(0);
+            chatContainer.setStyle("-fx-background-color: rgba(10, 10, 10, 0.85); " +
+                    "-fx-background-radius: 18; -fx-border-radius: 18; " +
+                    "-fx-border-color: cyan; -fx-border-width: 2;");
+            chatInput.setPromptText("Type in lobby and press ENTER...");
+            chatInput.setEditable(true);
+            chatInput.setDisable(false);
+            chatInput.setStyle(
+                    "-fx-background-color: #222; -fx-text-fill: white; -fx-font-size: 16; -fx-border-color: #555;");
+        } else if (currentState == GameState.COUNTDOWN || currentState == GameState.RACING) {
+            chatContainer.setVisible(true);
+            chatContainer.setOpacity(1.0);
+            chatScrollPane.setOpacity(1.0);
+            chatContainer.setAlignment(Pos.BOTTOM_LEFT);
+            chatContainer.setMaxSize(350, 250);
+            chatContainer.setTranslateX(30);
+            chatContainer.setTranslateY(-30);
+            chatContainer.setStyle("-fx-background-color: transparent; " +
+                    "-fx-background-radius: 12; -fx-border-radius: 12; " +
+                    "-fx-border-color: transparent; -fx-border-width: 0;");
+            chatInput.setPromptText("[T] to talk...");
+            closeChat();
+        } else {
+            chatContainer.setVisible(false);
+            closeChat();
+        }
     }
 
     private void showExitConfirm() {
@@ -902,6 +1136,7 @@ public class GameClient extends Application {
         currentState = GameState.STAGING;
         modeSelectionUI.setVisible(false);
         stagingUI.setVisible(true);
+        updateChatUIForCurrentState();
         connectToServer("localhost", 9876); // Connect to lobby
     }
 
@@ -1013,6 +1248,8 @@ public class GameClient extends Application {
             modalIndex = 1 - modalIndex; // Toggle between 0 and 1
         } else if (code == KeyCode.ENTER) {
             exitModalButtons.get(modalIndex).fire();
+        } else if (code == KeyCode.ESCAPE) {
+            hideExitConfirm();
         }
         updateMenuHighlighting();
     }
@@ -1111,11 +1348,18 @@ public class GameClient extends Application {
         for (int i = 0; i < exitModalButtons.size(); i++) {
             Button b = exitModalButtons.get(i);
             if (i == modalIndex && currentState == GameState.EXIT_CONFIRM) {
-                b.setEffect(new javafx.scene.effect.DropShadow(15, Color.CYAN));
-                b.setScaleX(1.1);
-                b.setScaleY(1.1);
+                b.setStyle(
+                        "-fx-background-color: cyan; -fx-text-fill: black; -fx-font-weight: bold; -fx-font-size: 20; -fx-background-radius: 6; -fx-border-radius: 6;");
+                b.setScaleX(1.15);
+                b.setScaleY(1.15);
             } else {
-                b.setEffect(null);
+                if (i == 0) { // YES button
+                    b.setStyle(
+                            "-fx-background-color: #900; -fx-text-fill: white; -fx-font-weight: bold; -fx-font-size: 20; -fx-background-radius: 6; -fx-border-radius: 6;");
+                } else { // NO button
+                    b.setStyle(
+                            "-fx-background-color: #444; -fx-text-fill: white; -fx-font-weight: bold; -fx-font-size: 20; -fx-background-radius: 6; -fx-border-radius: 6;");
+                }
                 b.setScaleX(1.0);
                 b.setScaleY(1.0);
             }
@@ -1199,6 +1443,7 @@ public class GameClient extends Application {
             countdownTime = 0;
             currentState = GameState.COUNTDOWN;
         }
+        updateChatUIForCurrentState();
     }
 
     private void drawStartingLights(GraphicsContext gc) {
@@ -1326,53 +1571,76 @@ public class GameClient extends Application {
             try {
                 DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
                 socket.receive(packet);
-                CarState state = CarState.deserialize(packet.getData(), packet.getOffset(), packet.getLength());
 
-                System.out.println("DEBUG: Received packet from ID " + state.playerID + " (Type: "
-                        + (state.playerID == -999 ? "SERVER" : "PLAYER") + ")");
-
-                // Check for Server Authoritative Start Signal
-                if (state.playerID == -999 && state.isRaceStarted) {
-                    if (currentState == GameState.READY_WAIT || currentState == GameState.STAGING) {
-                        javafx.application.Platform.runLater(() -> {
-                            stagingUI.setVisible(false);
-                            readyWaitUI.setVisible(false);
-                            countdownTime = 0;
-                            currentState = GameState.COUNTDOWN;
-                        });
-                    }
+                ByteBuffer byteBuf = ByteBuffer.wrap(packet.getData(), packet.getOffset(), packet.getLength());
+                if (byteBuf.remaining() < 4)
                     continue;
-                }
 
-                if (state.playerID != this.playerID) {
-                    // Sync lobby size with other players/server
-                    if (state.requiredPlayers > 0 && this.REQUIRED_PLAYERS != state.requiredPlayers) {
-                        this.REQUIRED_PLAYERS = state.requiredPlayers;
+                int packetType = byteBuf.getInt();
+                if (packetType == 0) { // Telemetry / CarState
+                    CarState state = CarState.deserialize(packet.getData(), packet.getOffset() + 4,
+                            packet.getLength() - 4);
+
+                    System.out.println("DEBUG: Received state packet from ID " + state.playerID + " (Type: "
+                            + (state.playerID == -999 ? "SERVER" : "PLAYER") + ")");
+
+                    // Check for Server Authoritative Start Signal
+                    if (state.playerID == -999 && state.isRaceStarted) {
+                        if (currentState == GameState.READY_WAIT || currentState == GameState.STAGING
+                                || currentState == GameState.START_SCREEN) {
+                            javafx.application.Platform.runLater(() -> {
+                                stagingUI.setVisible(false);
+                                readyWaitUI.setVisible(false);
+                                startScreenUI.setVisible(false);
+                                countdownTime = 0;
+                                currentState = GameState.COUNTDOWN;
+                                updateChatUIForCurrentState(); // Move chat box to bottom-left overlay
+                            });
+                        }
+                        continue;
                     }
 
-                    Car remoteCar = otherCars.computeIfAbsent(state.playerID, id -> {
-                        Car c = new Car();
-                        c.color = Color.GRAY;
-                        c.x = state.x;
-                        c.y = state.y;
-                        c.targetX = state.x;
-                        c.targetY = state.y;
-                        c.targetAngle = state.angle;
-                        return c;
-                    });
+                    if (state.playerID != this.playerID) {
+                        // Sync lobby size with other players/server
+                        if (state.requiredPlayers > 0 && this.REQUIRED_PLAYERS != state.requiredPlayers) {
+                            this.REQUIRED_PLAYERS = state.requiredPlayers;
+                        }
 
-                    // Ignore old packets
-                    if (state.sequenceNumber > remoteCar.lastSequenceNumber) {
-                        remoteCar.lastSequenceNumber = state.sequenceNumber;
-                        remoteCar.targetX = state.x;
-                        remoteCar.targetY = state.y;
-                        remoteCar.targetAngle = state.angle;
-                        remoteCar.velocity = state.velocity;
+                        Car remoteCar = otherCars.computeIfAbsent(state.playerID, id -> {
+                            Car c = new Car();
+                            c.color = Color.GRAY;
+                            c.x = state.x;
+                            c.y = state.y;
+                            c.targetX = state.x;
+                            c.targetY = state.y;
+                            c.targetAngle = state.angle;
+                            return c;
+                        });
 
-                        if (remoteCar.teamOrdinal != state.teamOrdinal) {
-                            remoteCar.teamOrdinal = state.teamOrdinal; // Sync team choice
-                            // Force UI update if someone picks a team
-                            javafx.application.Platform.runLater(() -> updateMenuHighlighting());
+                        // Ignore old packets
+                        if (state.sequenceNumber > remoteCar.lastSequenceNumber) {
+                            remoteCar.lastSequenceNumber = state.sequenceNumber;
+                            remoteCar.targetX = state.x;
+                            remoteCar.targetY = state.y;
+                            remoteCar.targetAngle = state.angle;
+                            remoteCar.velocity = state.velocity;
+
+                            if (remoteCar.teamOrdinal != state.teamOrdinal) {
+                                remoteCar.teamOrdinal = state.teamOrdinal; // Sync team choice
+                                // Force UI update if someone picks a team
+                                javafx.application.Platform.runLater(() -> updateMenuHighlighting());
+                            }
+                        }
+                    }
+                } else if (packetType == 1) { // ChatMessage
+                    if (byteBuf.remaining() >= 8) {
+                        int senderID = byteBuf.getInt();
+                        int msgLen = byteBuf.getInt();
+                        if (byteBuf.remaining() >= msgLen) {
+                            byte[] msgBytes = new byte[msgLen];
+                            byteBuf.get(msgBytes);
+                            String message = new String(msgBytes, StandardCharsets.UTF_8);
+                            displayChatMessage(senderID, message);
                         }
                     }
                 }
@@ -1421,7 +1689,12 @@ public class GameClient extends Application {
             state.isRaceStarted = (currentState == GameState.RACING);
             state.requiredPlayers = REQUIRED_PLAYERS;
 
-            byte[] data = state.serialize();
+            byte[] serialized = state.serialize();
+            ByteBuffer buffer = ByteBuffer.allocate(4 + serialized.length);
+            buffer.putInt(0); // Type 0: CAR_STATE
+            buffer.put(serialized);
+
+            byte[] data = buffer.array();
             DatagramPacket packet = new DatagramPacket(data, data.length, serverAddress, serverPort);
             socket.send(packet);
         } catch (Exception e) {
@@ -1568,6 +1841,10 @@ public class GameClient extends Application {
 // Handles user input
 class InputHandler {
     private Set<KeyCode> pressedKeys = new HashSet<>();
+
+    public void clear() {
+        pressedKeys.clear();
+    }
 
     public void handleKeyPressed(KeyEvent e) {
         pressedKeys.add(e.getCode());

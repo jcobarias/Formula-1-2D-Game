@@ -3,6 +3,7 @@ import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.nio.ByteBuffer;
 
 /**
  * GridRush F1 - Game Server
@@ -41,65 +42,113 @@ public class GameServer {
     private int requiredPlayers = -1; // Dynamic based on first client
     private boolean raceStarted = false;
 
+    private void pruneDeadClients() {
+        long now = System.currentTimeMillis();
+        boolean removedAny = false;
+        for (Map.Entry<Integer, ClientInfo> entry : clients.entrySet()) {
+            if (now - entry.getValue().lastHeartbeat > 6000) { // 6-second timeout
+                clients.remove(entry.getKey());
+                System.out.println("🥀 Driver ID " + entry.getKey() + " timed out due to inactivity.");
+                removedAny = true;
+            }
+        }
+        if (removedAny && clients.isEmpty()) {
+            System.out.println("♻️ Lobby empty. Resetting server state...");
+            raceStarted = false;
+            requiredPlayers = -1;
+        }
+    }
+
     private void handlePacket(DatagramPacket packet) {
         try {
-            CarState state = CarState.deserialize(packet.getData(), packet.getOffset(), packet.getLength());
-            int playerID = state.playerID;
+            pruneDeadClients();
 
-            // Register/Update client address
-            if (!clients.containsKey(playerID)) {
-                clients.put(playerID, new ClientInfo(packet.getAddress(), packet.getPort()));
-                System.out.println("🏎️ New Driver Joined: ID " + playerID + " (Port: " + packet.getPort() + ")");
+            ByteBuffer buffer = ByteBuffer.wrap(packet.getData(), packet.getOffset(), packet.getLength());
+            if (buffer.remaining() < 4) return;
 
-                // Set server capacity based on first player's choice
-                if (requiredPlayers == -1 && state.requiredPlayers > 0) {
-                    requiredPlayers = state.requiredPlayers;
-                    System.out.println("🔧 Server capacity set to: " + requiredPlayers + " players.");
-                }
-            }
+            int packetType = buffer.getInt();
+            if (packetType == 0) { // Telemetry/CarState
+                CarState state = CarState.deserialize(packet.getData(), packet.getOffset() + 4, packet.getLength() - 4);
+                int playerID = state.playerID;
 
-            // Track team choice
-            ClientInfo client = clients.get(playerID);
-            if (client.teamOrdinal != state.teamOrdinal) {
-                client.teamOrdinal = state.teamOrdinal;
-                if (state.teamOrdinal != -1) {
-                    System.out.println("✅ Driver " + playerID + " selected team ordinal: " + state.teamOrdinal);
-                }
-            }
+                // Register/Update client address
+                if (!clients.containsKey(playerID)) {
+                    clients.put(playerID, new ClientInfo(packet.getAddress(), packet.getPort()));
+                    System.out.println("🏎️ New Driver Joined: ID " + playerID + " (Port: " + packet.getPort() + ")");
 
-            // Check if everyone is ready (joined AND picked team)
-            if (requiredPlayers != -1 && clients.size() >= requiredPlayers && !raceStarted) {
-                int readyCount = 0;
-                for (ClientInfo c : clients.values()) {
-                    if (c.teamOrdinal != -1)
-                        readyCount++;
-                }
-
-                if (readyCount >= requiredPlayers) {
-                    raceStarted = true;
-                    System.out.println("🏁 All " + requiredPlayers + " drivers ready! Broadcasting START signal.");
-
-                    CarState startSignal = new CarState();
-                    startSignal.playerID = -999;
-                    startSignal.isRaceStarted = true;
-                    startSignal.requiredPlayers = requiredPlayers;
-                    byte[] startData = startSignal.serialize();
-
-                    // Broadcast multiple times for reliability
-                    for (int i = 0; i < 3; i++) {
-                        broadcastState(startData, startData.length, -1);
+                    // Set server capacity based on first player's choice
+                    if (requiredPlayers == -1 && state.requiredPlayers > 0) {
+                        requiredPlayers = state.requiredPlayers;
+                        System.out.println("🔧 Server capacity set to: " + requiredPlayers + " players.");
                     }
                 } else {
-                    // Periodic status log every 3 seconds
-                    if (System.currentTimeMillis() % 3000 < 50) {
-                        System.out.println(String.format("⏳ Lobby Status: [%d/%d Connected] | [%d/%d Ready]", 
-                            clients.size(), requiredPlayers, readyCount, requiredPlayers));
+                    clients.get(playerID).lastHeartbeat = System.currentTimeMillis();
+                }
+
+                // If any active client reports that they are NOT in a race, force reset server's raceStarted state
+                if (!state.isRaceStarted && raceStarted) {
+                    System.out.println("🔄 Active client reports lobby state. Resetting server raceStarted flag.");
+                    raceStarted = false;
+                }
+
+                // Track team choice
+                ClientInfo client = clients.get(playerID);
+                if (client.teamOrdinal != state.teamOrdinal) {
+                    client.teamOrdinal = state.teamOrdinal;
+                    if (state.teamOrdinal != -1) {
+                        System.out.println("✅ Driver " + playerID + " selected team ordinal: " + state.teamOrdinal);
                     }
                 }
-            }
 
-            // Relay this state to all other drivers
-            broadcastState(packet.getData(), packet.getLength(), playerID);
+                // Check if everyone is ready (joined AND picked team)
+                if (requiredPlayers != -1 && clients.size() >= requiredPlayers && !raceStarted) {
+                    int readyCount = 0;
+                    for (ClientInfo c : clients.values()) {
+                        if (c.teamOrdinal != -1)
+                            readyCount++;
+                    }
+
+                    if (readyCount >= requiredPlayers) {
+                        raceStarted = true;
+                        System.out.println("🏁 All " + requiredPlayers + " drivers ready! Broadcasting START signal.");
+
+                        CarState startSignal = new CarState();
+                        startSignal.playerID = -999;
+                        startSignal.isRaceStarted = true;
+                        startSignal.requiredPlayers = requiredPlayers;
+                        byte[] startData = startSignal.serialize();
+
+                        // Wrap start signal in Type 0 header
+                        ByteBuffer startBuffer = ByteBuffer.allocate(4 + startData.length);
+                        startBuffer.putInt(0);
+                        startBuffer.put(startData);
+                        byte[] finalStartData = startBuffer.array();
+
+                        // Broadcast multiple times for reliability
+                        for (int i = 0; i < 3; i++) {
+                            broadcastState(finalStartData, finalStartData.length, -1);
+                        }
+                    } else {
+                        // Periodic status log every 3 seconds
+                        if (System.currentTimeMillis() % 3000 < 50) {
+                            System.out.println(String.format("⏳ Lobby Status: [%d/%d Connected] | [%d/%d Ready]", 
+                                clients.size(), requiredPlayers, readyCount, requiredPlayers));
+                        }
+                    }
+                }
+
+                // Relay this state to all other drivers
+                broadcastState(packet.getData(), packet.getLength(), playerID);
+            } else if (packetType == 1) { // ChatMessage
+                if (buffer.remaining() >= 8) {
+                    int senderID = buffer.getInt();
+                    if (clients.containsKey(senderID)) {
+                        clients.get(senderID).lastHeartbeat = System.currentTimeMillis();
+                    }
+                    // Relay chat packet to all other connected clients
+                    broadcastState(packet.getData(), packet.getLength(), senderID);
+                }
+            }
 
         } catch (Exception e) {
             System.err.println("⚠️ Packet Error from " + packet.getAddress() + ": " + e.getMessage());
@@ -130,10 +179,12 @@ public class GameServer {
         InetAddress address;
         int port;
         int teamOrdinal = -1;
+        long lastHeartbeat;
 
         ClientInfo(InetAddress address, int port) {
             this.address = address;
             this.port = port;
+            this.lastHeartbeat = System.currentTimeMillis();
         }
     }
 
