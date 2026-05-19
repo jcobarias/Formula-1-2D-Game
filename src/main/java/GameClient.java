@@ -398,7 +398,7 @@ public class GameClient extends Application {
         menu.setStyle("-fx-background-color: #050505;");
 
         Text title = new Text("GRIDRUSH F1");
-        title.setFont(Font.font("Arial Black", 100));
+        title.setFont(Font.font("Verdana", FontWeight.BOLD, 100));
         title.setFill(Color.WHITE);
         title.setEffect(new javafx.scene.effect.Glow(0.8));
 
@@ -410,11 +410,29 @@ public class GameClient extends Application {
         Button multiPlayer2Btn = createMenuButton("MULTIPLAYER (2 PLAYERS)");
         Button multiPlayer4Btn = createMenuButton("MULTIPLAYER (4 PLAYERS)");
 
+        // Car selection area at the bottom
+        HBox carsBox = new HBox(30); // spacing between cars
+        carsBox.setAlignment(Pos.CENTER);
+        carsBox.setPadding(new Insets(20, 10, 20, 10));
+        carsBox.setStyle("-fx-background-color: transparent;");
+
+        // Load images for each team
+        for (F1Team team : F1Team.values()) {
+            Image img = new Image(getClass().getResourceAsStream(team.spritePath));
+            ImageView iv = new ImageView(img);
+            iv.setFitWidth(300);
+            iv.setFitHeight(150);
+            iv.setPreserveRatio(true);
+            // Optional: add border or effect for selection highlight
+            iv.setUserData(team); // store team info for later use
+            carsBox.getChildren().add(iv);
+        }
+
         singlePlayerBtn.setOnAction(e -> startSinglePlayer());
         multiPlayer2Btn.setOnAction(e -> startMultiplayer(2));
         multiPlayer4Btn.setOnAction(e -> startMultiplayer(4));
 
-        menu.getChildren().addAll(title, subtitle, singlePlayerBtn, multiPlayer2Btn, multiPlayer4Btn);
+        menu.getChildren().addAll(title, subtitle, singlePlayerBtn, multiPlayer2Btn, multiPlayer4Btn, carsBox);
         return menu;
     }
 
@@ -435,7 +453,7 @@ public class GameClient extends Application {
         menu.setVisible(false);
 
         Text title = new Text("F1 MULTIPLAYER LOBBY");
-        title.setFont(Font.font("Arial Black", 60));
+        title.setFont(Font.font("Verdana", FontWeight.BOLD, 100));
         title.setFill(Color.CYAN);
         title.setEffect(new javafx.scene.effect.Glow(0.5));
 
@@ -495,7 +513,7 @@ public class GameClient extends Application {
     private VBox createStartScreenUI() {
         VBox menu = new VBox(40);
         menu.setAlignment(Pos.CENTER);
-        menu.setStyle("-fx-background-color: rgba(0,0,0,0.8);");
+        menu.setStyle("-fx-background-color: rgba(0, 0, 0, 0.8);");
         menu.setVisible(false); // Changed to false: hide until mode is selected
 
         Text title = new Text("GRIDRUSH F1");

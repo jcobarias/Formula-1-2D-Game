@@ -1,8 +1,6 @@
 Vector2D.class
 PhysicsEngine.class
 F1Team.class
-RaceManager.class
-Player.class
 InputHandler.class
 GameState.class
 CarState.class
@@ -14,4 +12,5 @@ Confetti.class
 InputState.class
 RaceTrack.class
 Car.class
+GameServer$ClientInfo.class
 GameApp.class
