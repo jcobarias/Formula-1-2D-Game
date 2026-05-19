@@ -15,13 +15,11 @@ import javafx.geometry.*;
 import javafx.beans.binding.Bindings;
 import javafx.scene.transform.Scale;
 import javafx.scene.Group;
-
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import java.util.HashMap;
 import javafx.scene.effect.DropShadow;
 import java.util.ArrayList;
-import java.util.List;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.Collections;
@@ -388,7 +386,11 @@ public class GameClient extends Application {
         menu.setStyle("-fx-background-color: #050505;");
 
         Text title = new Text("GRIDRUSH F1");
+<<<<<<< HEAD
         title.setFont(Font.font("Verdana", FontWeight.BOLD, 100));
+=======
+        title.setFont(Font.font("Arial Black", 100));
+>>>>>>> main
         title.setFill(Color.WHITE);
         title.setEffect(new javafx.scene.effect.Glow(0.8));
 
@@ -400,6 +402,7 @@ public class GameClient extends Application {
         Button multiPlayer2Btn = createMenuButton("MULTIPLAYER (2 PLAYERS)");
         Button multiPlayer4Btn = createMenuButton("MULTIPLAYER (4 PLAYERS)");
 
+<<<<<<< HEAD
         HBox carsBox = new HBox(30); // spacing between cars
         carsBox.setAlignment(Pos.CENTER);
         carsBox.setPadding(new Insets(20, 10, 20, 10));
@@ -416,11 +419,17 @@ public class GameClient extends Application {
             iv.setUserData(team); // store team info for later use
             carsBox.getChildren().add(iv);
         }
+=======
+>>>>>>> main
         singlePlayerBtn.setOnAction(e -> startSinglePlayer());
         multiPlayer2Btn.setOnAction(e -> startMultiplayer(2));
         multiPlayer4Btn.setOnAction(e -> startMultiplayer(4));
 
+<<<<<<< HEAD
         menu.getChildren().addAll(title, subtitle, singlePlayerBtn, multiPlayer2Btn, multiPlayer4Btn, carsBox);
+=======
+        menu.getChildren().addAll(title, subtitle, singlePlayerBtn, multiPlayer2Btn, multiPlayer4Btn);
+>>>>>>> main
         return menu;
     }
 
@@ -441,7 +450,11 @@ public class GameClient extends Application {
         menu.setVisible(false);
 
         Text title = new Text("F1 MULTIPLAYER LOBBY");
+<<<<<<< HEAD
         title.setFont(Font.font("Arial Black", 60));
+=======
+        title.setFont(Font.font("Arial Black", 60));
+>>>>>>> main
         title.setFill(Color.CYAN);
         title.setEffect(new javafx.scene.effect.Glow(0.5));
 
@@ -501,7 +514,11 @@ public class GameClient extends Application {
     private VBox createStartScreenUI() {
         VBox menu = new VBox(40);
         menu.setAlignment(Pos.CENTER);
+<<<<<<< HEAD
         menu.setStyle("-fx-background-color: rgba(0,0,0,0.8);");
+=======
+        menu.setStyle("-fx-background-color: rgba(0,0,0,0.8);");
+>>>>>>> main
         menu.setVisible(false); // Changed to false: hide until mode is selected
 
         Text title = new Text("GRIDRUSH F1");
@@ -726,16 +743,22 @@ public class GameClient extends Application {
 
     private void handleStartMenuKey(KeyCode code) {
         if (code == KeyCode.LEFT) {
-            if (menuIndex >= carCards.size()) menuIndex = carCards.size() - 1;
-            else menuIndex = (menuIndex - 1 + carCards.size()) % carCards.size();
+            if (menuIndex >= carCards.size())
+                menuIndex = carCards.size() - 1;
+            else
+                menuIndex = (menuIndex - 1 + carCards.size()) % carCards.size();
         } else if (code == KeyCode.RIGHT) {
-            if (menuIndex >= carCards.size()) menuIndex = 0;
-            else menuIndex = (menuIndex + 1) % carCards.size();
+            if (menuIndex >= carCards.size())
+                menuIndex = 0;
+            else
+                menuIndex = (menuIndex + 1) % carCards.size();
         } else if (code == KeyCode.DOWN && menuIndex < carCards.size()) {
             menuIndex = carCards.size(); // Focus Exit Button
         } else if (code == KeyCode.UP) {
-            if (menuIndex >= carCards.size()) menuIndex = 0; // Focus first car card
-            else menuIndex = carCards.size(); // Wrap around to exit button? (Optional)
+            if (menuIndex >= carCards.size())
+                menuIndex = 0; // Focus first car card
+            else
+                menuIndex = carCards.size(); // Wrap around to exit button? (Optional)
         } else if (code == KeyCode.ENTER) {
             if (menuIndex < carCards.size()) {
                 F1Team team = F1Team.values()[menuIndex];
@@ -858,6 +881,7 @@ public class GameClient extends Application {
 
             if (i == menuIndex && currentState == GameState.START_SCREEN) {
                 if (taken) {
+<<<<<<< HEAD
                     card.setStyle(
                          "-fx-background-color: #111;" +
                          "-fx-border-color: red;" +
@@ -866,6 +890,9 @@ public class GameClient extends Application {
                          "-fx-background-radius: 18;" +
                          "-fx-border-radius: 18;"
                     );
+=======
+                    card.setStyle("-fx-border-color: red; -fx-border-width: 5; -fx-background-color: #422;");
+>>>>>>> main
                     btn.setText("TAKEN");
                     btn.setDisable(true);
                 } else {
@@ -1116,8 +1143,9 @@ public class GameClient extends Application {
                 DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
                 socket.receive(packet);
                 CarState state = CarState.deserialize(packet.getData(), packet.getOffset(), packet.getLength());
-                
-                System.out.println("DEBUG: Received packet from ID " + state.playerID + " (Type: " + (state.playerID == -999 ? "SERVER" : "PLAYER") + ")");
+
+                System.out.println("DEBUG: Received packet from ID " + state.playerID + " (Type: "
+                        + (state.playerID == -999 ? "SERVER" : "PLAYER") + ")");
 
                 // Check for Server Authoritative Start Signal
                 if (state.playerID == -999 && state.isRaceStarted) {
@@ -1379,7 +1407,7 @@ class InputHandler {
 // Renders the track and cars
 class TrackRenderer {
 
-    private final Map<Integer, Image> carSprites = new HashMap<>(); //added this code for sprite storage
+    private final Map<Integer, Image> carSprites = new HashMap<>(); // added this code for sprite storage
 
     public TrackRenderer() {
 
@@ -1388,20 +1416,17 @@ class TrackRenderer {
             try {
 
                 Image img = new Image(
-                    getClass().getResourceAsStream(team.spritePath)
-                );
+                        getClass().getResourceAsStream(team.spritePath));
 
                 carSprites.put(team.ordinal(), img);
 
                 System.out.println(
-                    "Loaded sprite: " + team.spritePath
-                );
+                        "Loaded sprite: " + team.spritePath);
 
             } catch (Exception e) {
 
                 System.out.println(
-                    "Failed to load sprite: " + team.spritePath
-                );
+                        "Failed to load sprite: " + team.spritePath);
 
                 e.printStackTrace();
             }
@@ -1463,67 +1488,66 @@ class TrackRenderer {
         }
     }
 
-    public void drawCars(GraphicsContext gc, List<Car> allCars) { //added this code
+    public void drawCars(GraphicsContext gc, List<Car> allCars) { // added this code
 
-    for (Car car : allCars) {
+        for (Car car : allCars) {
 
-        gc.save();
+            gc.save();
 
-        gc.translate(car.x, car.y);
+            gc.translate(car.x, car.y);
 
-        gc.rotate(car.angle);
+            gc.rotate(car.angle);
 
-        // SHADOW
+            // SHADOW
 
-        gc.setGlobalAlpha(0.25);
+            gc.setGlobalAlpha(0.25);
 
-        gc.setFill(Color.BLACK);
+            gc.setFill(Color.BLACK);
 
-        gc.fillOval(-22, -10, 44, 20);
+            gc.fillOval(-22, -10, 44, 20);
 
-        gc.setGlobalAlpha(1.0);
+            gc.setGlobalAlpha(1.0);
 
-        // SPRITE RENDERING
+            // SPRITE RENDERING
 
-        Image sprite = null;
+            Image sprite = null;
 
-        if (car.teamOrdinal >= 0 &&
-            car.teamOrdinal < F1Team.values().length) {
+            if (car.teamOrdinal >= 0 &&
+                    car.teamOrdinal < F1Team.values().length) {
 
-            sprite = carSprites.get(car.teamOrdinal);
+                sprite = carSprites.get(car.teamOrdinal);
+            }
+
+            if (sprite != null) {
+
+                double width = 60;
+                double height = 30;
+
+                gc.drawImage(
+                        sprite,
+                        -width / 2,
+                        -height / 2,
+                        width,
+                        height);
+
+            } else {
+
+                // FALLBACK RECTANGLE
+
+                gc.setFill(car.color);
+                gc.fillRoundRect(-20, -10, 40, 20, 8, 8);
+
+                gc.setFill(car.accentColor);
+                gc.fillRect(-5, -10, 10, 20);
+            }
+
+            // DRIVER NUMBER DOT
+
+            gc.setFill(Color.WHITE);
+
+            gc.fillOval(-4, -4, 8, 8);
+
+            gc.restore();
         }
-
-        if (sprite != null) {
-
-            double width = 60;
-            double height = 30;
-
-            gc.drawImage(
-                sprite,
-                -width / 2,
-                -height / 2,
-                width,
-                height
-            );
-
-        } else {
-
-            // FALLBACK RECTANGLE
-
-            gc.setFill(car.color);
-            gc.fillRoundRect(-20, -10, 40, 20, 8, 8);
-
-            gc.setFill(car.accentColor);
-            gc.fillRect(-5, -10, 10, 20);
-        }
-
-        // DRIVER NUMBER DOT
-
-        gc.setFill(Color.WHITE);
-
-        gc.fillOval(-4, -4, 8, 8);
-
-        gc.restore();
     }
-}
 }
