@@ -386,11 +386,7 @@ public class GameClient extends Application {
         menu.setStyle("-fx-background-color: #050505;");
 
         Text title = new Text("GRIDRUSH F1");
-<<<<<<< HEAD
         title.setFont(Font.font("Verdana", FontWeight.BOLD, 100));
-=======
-        title.setFont(Font.font("Arial Black", 100));
->>>>>>> main
         title.setFill(Color.WHITE);
         title.setEffect(new javafx.scene.effect.Glow(0.8));
 
@@ -402,7 +398,6 @@ public class GameClient extends Application {
         Button multiPlayer2Btn = createMenuButton("MULTIPLAYER (2 PLAYERS)");
         Button multiPlayer4Btn = createMenuButton("MULTIPLAYER (4 PLAYERS)");
 
-<<<<<<< HEAD
         HBox carsBox = new HBox(30); // spacing between cars
         carsBox.setAlignment(Pos.CENTER);
         carsBox.setPadding(new Insets(20, 10, 20, 10));
@@ -419,17 +414,11 @@ public class GameClient extends Application {
             iv.setUserData(team); // store team info for later use
             carsBox.getChildren().add(iv);
         }
-=======
->>>>>>> main
         singlePlayerBtn.setOnAction(e -> startSinglePlayer());
         multiPlayer2Btn.setOnAction(e -> startMultiplayer(2));
         multiPlayer4Btn.setOnAction(e -> startMultiplayer(4));
 
-<<<<<<< HEAD
-        menu.getChildren().addAll(title, subtitle, singlePlayerBtn, multiPlayer2Btn, multiPlayer4Btn, carsBox);
-=======
         menu.getChildren().addAll(title, subtitle, singlePlayerBtn, multiPlayer2Btn, multiPlayer4Btn);
->>>>>>> main
         return menu;
     }
 
@@ -514,11 +503,7 @@ public class GameClient extends Application {
     private VBox createStartScreenUI() {
         VBox menu = new VBox(40);
         menu.setAlignment(Pos.CENTER);
-<<<<<<< HEAD
         menu.setStyle("-fx-background-color: rgba(0,0,0,0.8);");
-=======
-        menu.setStyle("-fx-background-color: rgba(0,0,0,0.8);");
->>>>>>> main
         menu.setVisible(false); // Changed to false: hide until mode is selected
 
         Text title = new Text("GRIDRUSH F1");
@@ -539,17 +524,15 @@ public class GameClient extends Application {
             card.setAlignment(Pos.CENTER);
             card.setPadding(new Insets(20));
             card.setStyle(
-                "-fx-background-color: linear-gradient(to bottom, #222, #111);" +
-                "-fx-border-color: " + team.accent + ";" +
-                "-fx-border-width: 3;" +
-                "-fx-background-radius: 18;" +
-                "-fx-border-radius: 18;"
-            );
+                    "-fx-background-color: linear-gradient(to bottom, #222, #111);" +
+                            "-fx-border-color: " + team.accent + ";" +
+                            "-fx-border-width: 3;" +
+                            "-fx-background-radius: 18;" +
+                            "-fx-border-radius: 18;");
             card.setPrefWidth(280);
 
             ImageView preview = new ImageView(
-                new Image(getClass().getResourceAsStream(team.spritePath))
-            );
+                    new Image(getClass().getResourceAsStream(team.spritePath)));
 
             preview.setFitWidth(220);
             preview.setFitHeight(110);
@@ -881,18 +864,13 @@ public class GameClient extends Application {
 
             if (i == menuIndex && currentState == GameState.START_SCREEN) {
                 if (taken) {
-<<<<<<< HEAD
                     card.setStyle(
-                         "-fx-background-color: #111;" +
-                         "-fx-border-color: red;" +
-                         "-fx-border-width: 3;" +
-                         "-fx-opacity: 0.45;" +
-                         "-fx-background-radius: 18;" +
-                         "-fx-border-radius: 18;"
-                    );
-=======
-                    card.setStyle("-fx-border-color: red; -fx-border-width: 5; -fx-background-color: #422;");
->>>>>>> main
+                            "-fx-background-color: #111;" +
+                                    "-fx-border-color: red;" +
+                                    "-fx-border-width: 3;" +
+                                    "-fx-opacity: 0.45;" +
+                                    "-fx-background-radius: 18;" +
+                                    "-fx-border-radius: 18;");
                     btn.setText("TAKEN");
                     btn.setDisable(true);
                 } else {
