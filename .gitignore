@@ -1,0 +1,19 @@
+# Maven build output directory (includes compiled classes, packaged jars, and inputFiles.lst)
+target/
+
+# IDE / Editor folders and files
+.idea/
+.vscode/
+*.iml
+*.iws
+*.ipr
+.classpath
+.project
+.settings/
+bin/
+
+# Temporary / OS generated files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store

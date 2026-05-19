@@ -127,6 +127,7 @@ public class GameClient extends Application {
     private List<Button> pauseButtons = new ArrayList<>();
     private List<Button> victoryButtons = new ArrayList<>();
     private Button startScreenExitBtn;
+    private Button startScreenBackBtn;
     private List<Button> exitModalButtons = new ArrayList<>();
     private int modalIndex = 0;
 
@@ -464,9 +465,10 @@ public class GameClient extends Application {
     Button singlePlayerBtn = createMenuButton("SINGLE PLAYER");
     Button multiPlayer2Btn = createMenuButton("MULTIPLAYER (2 PLAYERS)");
     Button multiPlayer4Btn = createMenuButton("MULTIPLAYER (4 PLAYERS)");
+    Button exitBtn = createMenuButton("EXIT GAME");
 
     // Ensure buttons are wide enough so they never clip text (...)
-    for (Button btn : new java.util.ArrayList<Button>(java.util.Arrays.asList(singlePlayerBtn, multiPlayer2Btn, multiPlayer4Btn))) {
+    for (Button btn : new java.util.ArrayList<Button>(java.util.Arrays.asList(singlePlayerBtn, multiPlayer2Btn, multiPlayer4Btn, exitBtn))) {
         btn.setMinWidth(460);
         btn.setMinHeight(55);
     }
@@ -527,8 +529,9 @@ public class GameClient extends Application {
     singlePlayerBtn.setOnAction(e -> startSinglePlayer());
     multiPlayer2Btn.setOnAction(e -> startMultiplayer(2));
     multiPlayer4Btn.setOnAction(e -> startMultiplayer(4));
+    exitBtn.setOnAction(e -> showExitConfirm());
 
-    menu.getChildren().addAll(titleStack, subtitle, singlePlayerBtn, multiPlayer2Btn, multiPlayer4Btn, carsBox);
+    menu.getChildren().addAll(titleStack, subtitle, singlePlayerBtn, multiPlayer2Btn, multiPlayer4Btn, exitBtn, carsBox);
     
     // 5. Group layers together safely
     rootContainer.getChildren().addAll(checkerBackground, overlay, menu);
@@ -550,7 +553,7 @@ public class GameClient extends Application {
         menu.setAlignment(Pos.CENTER);
         menu.setStyle(
                 "-fx-background-color: rgba(10, 10, 10, 0.95); -fx-border-color: cyan; -fx-border-width: 3; -fx-padding: 50;");
-        menu.setMaxSize(1000, 700);
+        menu.setMaxSize(1000, 750);
         menu.setVisible(false);
 
         Text title = new Text("F1 MULTIPLAYER LOBBY");
@@ -565,7 +568,11 @@ public class GameClient extends Application {
         stagingPlayerList = new VBox(15);
         stagingPlayerList.setAlignment(Pos.CENTER);
 
-        menu.getChildren().addAll(title, stagingStatusText, stagingPlayerList);
+        Button leaveBtn = new Button("LEAVE LOBBY");
+        styleMenuButton(leaveBtn);
+        leaveBtn.setOnAction(e -> leaveStagingLobby());
+
+        menu.getChildren().addAll(title, stagingStatusText, stagingPlayerList, leaveBtn);
         return menu;
     }
 
@@ -689,20 +696,29 @@ public class GameClient extends Application {
 
         menu.getChildren().addAll(title, sub, carBox);
 
-        // Add a dedicated Exit Button at the bottom
+        // Add dedicated Back to Menu and Exit Buttons in an HBox at the bottom
+        HBox bottomButtons = new HBox(30);
+        bottomButtons.setAlignment(Pos.CENTER);
+
+        this.startScreenBackBtn = new Button("BACK TO MENU");
+        styleMenuButton(startScreenBackBtn);
+        startScreenBackBtn.setOnAction(e -> returnToMainMenu());
+
         this.startScreenExitBtn = new Button("EXIT GAME");
         styleMenuButton(startScreenExitBtn);
         startScreenExitBtn.setOnAction(e -> showExitConfirm());
-        menu.getChildren().add(startScreenExitBtn);
+
+        bottomButtons.getChildren().addAll(startScreenBackBtn, startScreenExitBtn);
+        menu.getChildren().add(bottomButtons);
 
         return menu;
     }
 
     private VBox createReadyWaitUI() {
-        VBox menu = new VBox(40);
+        VBox menu = new VBox(30);
         menu.setAlignment(Pos.CENTER);
-        menu.setStyle("-fx-background-color: rgba(10, 10, 10, 0.95); -fx-border-color: cyan; -fx-border-width: 3;");
-        menu.setMaxSize(800, 300);
+        menu.setStyle("-fx-background-color: rgba(10, 10, 10, 0.95); -fx-border-color: cyan; -fx-border-width: 3; -fx-padding: 30;");
+        menu.setMaxSize(800, 450);
         menu.setVisible(false);
 
         Text title = new Text("WAITING FOR OTHER DRIVERS");
@@ -714,11 +730,60 @@ public class GameClient extends Application {
         readyWaitStatusText.setFill(Color.WHITE);
 
         javafx.scene.control.ProgressIndicator progress = new javafx.scene.control.ProgressIndicator();
-        progress.setPrefSize(80, 80);
+        progress.setPrefSize(60, 60);
         progress.setStyle("-fx-progress-color: cyan;");
 
-        menu.getChildren().addAll(title, readyWaitStatusText, progress);
+        Button leaveBtn = new Button("LEAVE LOBBY");
+        styleMenuButton(leaveBtn);
+        leaveBtn.setOnAction(e -> leaveStagingLobby());
+
+        menu.getChildren().addAll(title, readyWaitStatusText, progress, leaveBtn);
         return menu;
+    }
+
+    private void leaveStagingLobby() {
+        // Disconnect cleanly from the server
+        if (socket != null) {
+            socket.close();
+            socket = null;
+        }
+        otherCars.clear();
+        lastKnownPlayerCount = -1;
+
+        // Toggle UI visibility
+        if (stagingUI != null) {
+            stagingUI.setVisible(false);
+        }
+        if (readyWaitUI != null) {
+            readyWaitUI.setVisible(false);
+        }
+        if (startScreenUI != null) {
+            startScreenUI.setVisible(false);
+        }
+        if (modeSelectionUI != null) {
+            modeSelectionUI.setVisible(true);
+        }
+
+        // Reset game state back to Mode Selection
+        currentState = GameState.MODE_SELECTION;
+        menuIndex = 0;
+        updateMenuHighlighting();
+        
+        System.out.println("🚪 Left multiplayer lobby. Returned to Main Menu.");
+    }
+
+    private void returnToMainMenu() {
+        if (startScreenUI != null) {
+            startScreenUI.setVisible(false);
+        }
+        if (modeSelectionUI != null) {
+            modeSelectionUI.setVisible(true);
+        }
+        currentState = GameState.MODE_SELECTION;
+        menuIndex = 0;
+        myCar.teamOrdinal = -1;
+        updateMenuHighlighting();
+        System.out.println("🚪 Returned to Main Menu from car selection.");
     }
 
     private VBox createExitConfirmUI() {
@@ -797,17 +862,19 @@ public class GameClient extends Application {
     }
 
     private void handleModeSelectionKey(KeyCode code) {
-        if (code == KeyCode.UP || code == KeyCode.DOWN) {
-            menuIndex = 1 - menuIndex;
+        if (code == KeyCode.UP) {
+            menuIndex = (menuIndex - 1 + 4) % 4;
+        } else if (code == KeyCode.DOWN) {
+            menuIndex = (menuIndex + 1) % 4;
         } else if (code == KeyCode.ENTER) {
-            if (menuIndex == 0) { // Singleplayer
-                isMultiplayer = false;
-                currentState = GameState.START_SCREEN;
-                modeSelectionUI.setVisible(false);
-                startScreenUI.setVisible(true);
-                menuIndex = 0; // Reset for car selection
-            } else { // Multiplayer
-                startMultiplayer(2); // Default to 2 if using keyboard Enter
+            if (menuIndex == 0) { // Single Player
+                startSinglePlayer();
+            } else if (menuIndex == 1) { // Multiplayer (2 Players)
+                startMultiplayer(2);
+            } else if (menuIndex == 2) { // Multiplayer (4 Players)
+                startMultiplayer(4);
+            } else if (menuIndex == 3) { // Exit Game
+                showExitConfirm();
             }
         }
         updateMenuHighlighting();
@@ -837,22 +904,31 @@ public class GameClient extends Application {
 
     private void handleStartMenuKey(KeyCode code) {
         if (code == KeyCode.LEFT) {
-            if (menuIndex >= carCards.size())
-                menuIndex = carCards.size() - 1;
-            else
+            if (menuIndex > carCards.size()) {
+                menuIndex--; // Move from Exit to Back
+            } else if (menuIndex == carCards.size()) {
+                menuIndex = carCards.size() - 1; // Move from Back to last car card
+            } else {
                 menuIndex = (menuIndex - 1 + carCards.size()) % carCards.size();
+            }
         } else if (code == KeyCode.RIGHT) {
-            if (menuIndex >= carCards.size())
-                menuIndex = 0;
-            else
+            if (menuIndex == carCards.size() - 1) {
+                menuIndex = carCards.size(); // Move from last car card to Back
+            } else if (menuIndex == carCards.size()) {
+                menuIndex = carCards.size() + 1; // Move from Back to Exit
+            } else if (menuIndex == carCards.size() + 1) {
+                menuIndex = 0; // Wrap from Exit to first car card
+            } else {
                 menuIndex = (menuIndex + 1) % carCards.size();
+            }
         } else if (code == KeyCode.DOWN && menuIndex < carCards.size()) {
-            menuIndex = carCards.size(); // Focus Exit Button
+            menuIndex = carCards.size(); // Focus Back Button
         } else if (code == KeyCode.UP) {
-            if (menuIndex >= carCards.size())
+            if (menuIndex >= carCards.size()) {
                 menuIndex = 0; // Focus first car card
-            else
-                menuIndex = carCards.size(); // Wrap around to exit button? (Optional)
+            } else {
+                menuIndex = carCards.size(); // Focus Back Button
+            }
         } else if (code == KeyCode.ENTER) {
             if (menuIndex < carCards.size()) {
                 F1Team team = F1Team.values()[menuIndex];
@@ -860,6 +936,8 @@ public class GameClient extends Application {
                     myCar.teamOrdinal = team.ordinal();
                     startRace(team, startScreenUI);
                 }
+            } else if (menuIndex == carCards.size()) {
+                returnToMainMenu();
             } else {
                 showExitConfirm();
             }
@@ -950,16 +1028,21 @@ public class GameClient extends Application {
     private void updateMenuHighlighting() {
         // Mode Selection Highlight
         if (currentState == GameState.MODE_SELECTION && modeSelectionUI != null) {
-            for (int i = 0; i < modeSelectionUI.getChildren().size(); i++) {
-                javafx.scene.Node node = modeSelectionUI.getChildren().get(i);
-                if (node instanceof Button) {
-                    Button b = (Button) node;
-                    if (i == menuIndex + 1) {
-                        b.setStyle(
-                                "-fx-background-color: cyan; -fx-text-fill: black; -fx-font-size: 24; -fx-font-weight: bold;");
-                    } else {
-                        b.setStyle(
-                                "-fx-background-color: #333; -fx-text-fill: white; -fx-font-size: 24; -fx-font-weight: bold; -fx-border-color: #555;");
+            if (modeSelectionUI.getChildren().size() > 2 && modeSelectionUI.getChildren().get(2) instanceof VBox) {
+                VBox menuVBox = (VBox) modeSelectionUI.getChildren().get(2);
+                int buttonIdx = 0;
+                for (int i = 0; i < menuVBox.getChildren().size(); i++) {
+                    javafx.scene.Node node = menuVBox.getChildren().get(i);
+                    if (node instanceof Button) {
+                        Button b = (Button) node;
+                        if (buttonIdx == menuIndex) {
+                            b.setStyle(
+                                    "-fx-background-color: cyan; -fx-text-fill: black; -fx-font-size: 24; -fx-font-weight: bold;");
+                        } else {
+                            b.setStyle(
+                                    "-fx-background-color: #333; -fx-text-fill: white; -fx-font-size: 24; -fx-font-weight: bold; -fx-border-color: #555;");
+                        }
+                        buttonIdx++;
                     }
                 }
             }
@@ -1002,9 +1085,18 @@ public class GameClient extends Application {
                 }
             }
         }
-        // Exit Button Highlight
-        if (startScreenExitBtn != null) {
+        // Exit / Back Buttons Highlight
+        if (startScreenBackBtn != null) {
             if (menuIndex == carCards.size() && currentState == GameState.START_SCREEN) {
+                startScreenBackBtn.setStyle(
+                        "-fx-background-color: cyan; -fx-text-fill: black; -fx-font-size: 24; -fx-font-weight: bold;");
+            } else {
+                startScreenBackBtn.setStyle(
+                        "-fx-background-color: #333; -fx-text-fill: white; -fx-font-size: 24; -fx-font-weight: bold; -fx-border-color: #555;");
+            }
+        }
+        if (startScreenExitBtn != null) {
+            if (menuIndex == carCards.size() + 1 && currentState == GameState.START_SCREEN) {
                 startScreenExitBtn.setStyle(
                         "-fx-background-color: cyan; -fx-text-fill: black; -fx-font-size: 24; -fx-font-weight: bold;");
             } else {
@@ -1227,7 +1319,7 @@ public class GameClient extends Application {
 
     private void receiveOtherCars() {
         byte[] buffer = new byte[1024];
-        while (true) {
+        while (socket != null && !socket.isClosed()) {
             try {
                 DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
                 socket.receive(packet);
@@ -1282,8 +1374,13 @@ public class GameClient extends Application {
                     }
                 }
             } catch (Exception e) {
+                if (socket == null || socket.isClosed()) {
+                    System.out.println("🔌 Disconnected from server (Socket closed gracefully).");
+                    break;
+                }
                 System.err.println("CRITICAL: Error in receiver thread:");
                 e.printStackTrace();
+                break;
             }
         }
     }
