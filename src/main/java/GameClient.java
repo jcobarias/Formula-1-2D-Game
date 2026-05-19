@@ -1145,6 +1145,17 @@ public class GameClient extends Application {
             ip = "localhost";
         }
 
+        int port = 9876;
+        if (ip.contains(":")) {
+            String[] parts = ip.split(":");
+            ip = parts[0];
+            try {
+                port = Integer.parseInt(parts[1]);
+            } catch (NumberFormatException e) {
+                System.err.println("Invalid port number specified, defaulting to 9876.");
+            }
+        }
+
         this.REQUIRED_PLAYERS = players;
         this.isMultiplayer = true;
         this.otherCars.clear();
@@ -1164,7 +1175,7 @@ public class GameClient extends Application {
         modeSelectionUI.setVisible(false);
         stagingUI.setVisible(true);
         updateChatUIForCurrentState();
-        connectToServer(ip, 9876); // Connect to lobby
+        connectToServer(ip, port); // Connect to lobby at specified ip and port
     }
 
     private void handleStartMenuKey(KeyCode code) {
