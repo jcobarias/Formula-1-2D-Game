@@ -1021,10 +1021,11 @@ public class GameClient extends Application {
             chatContainer.setVisible(true);
             chatContainer.setOpacity(1.0);
             chatScrollPane.setOpacity(1.0);
-            chatContainer.setAlignment(Pos.CENTER_RIGHT);
+            StackPane.setAlignment(chatContainer, Pos.BOTTOM_LEFT);
+            chatContainer.setAlignment(Pos.BOTTOM_LEFT);
             chatContainer.setMaxSize(400, 500);
-            chatContainer.setTranslateX(-50);
-            chatContainer.setTranslateY(0);
+            chatContainer.setTranslateX(30);
+            chatContainer.setTranslateY(-30);
             chatContainer.setStyle("-fx-background-color: rgba(10, 10, 10, 0.85); " +
                     "-fx-background-radius: 18; -fx-border-radius: 18; " +
                     "-fx-border-color: cyan; -fx-border-width: 2;");
@@ -1037,6 +1038,7 @@ public class GameClient extends Application {
             chatContainer.setVisible(true);
             chatContainer.setOpacity(1.0);
             chatScrollPane.setOpacity(1.0);
+            StackPane.setAlignment(chatContainer, Pos.BOTTOM_LEFT);
             chatContainer.setAlignment(Pos.BOTTOM_LEFT);
             chatContainer.setMaxSize(350, 250);
             chatContainer.setTranslateX(30);
