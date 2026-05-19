@@ -20,6 +20,7 @@ import javafx.scene.image.ImageView;
 import java.util.HashMap;
 import javafx.scene.effect.DropShadow;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.Collections;
@@ -439,11 +440,7 @@ public class GameClient extends Application {
         menu.setVisible(false);
 
         Text title = new Text("F1 MULTIPLAYER LOBBY");
-<<<<<<< HEAD
         title.setFont(Font.font("Arial Black", 60));
-=======
-        title.setFont(Font.font("Arial Black", 60));
->>>>>>> main
         title.setFill(Color.CYAN);
         title.setEffect(new javafx.scene.effect.Glow(0.5));
 
